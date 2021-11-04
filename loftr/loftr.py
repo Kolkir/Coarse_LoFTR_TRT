@@ -16,12 +16,10 @@ class LoFTR(nn.Module):
 
         # Modules
         self.backbone = build_backbone(config)
-        self.backbone_script = None
         self.pos_encoding = PositionEncodingSine(
             config['coarse']['d_model'],
             temp_bug_fix=config['coarse']['temp_bug_fix'])
         self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
-        self.loftr_coarse_script = None
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_preprocess = FinePreprocess(config)
         self.loftr_fine = LocalFeatureTransformer(config["fine"])
@@ -43,11 +41,7 @@ class LoFTR(nn.Module):
         })
 
         # we assume that data['hw0_i'] == data['hw1_i'] - faster & better BN convergence
-        if self.backbone_script is not None:
-            feats_c, feats_i, feats_f = self.backbone_script(
-                torch.cat([self.data['image0'], self.data['image1']], dim=0))
-        else:
-            feats_c, feats_i, feats_f = self.backbone(torch.cat([self.data['image0'], self.data['image1']], dim=0))
+        feats_c, feats_i, feats_f = self.backbone(torch.cat([self.data['image0'], self.data['image1']], dim=0))
 
         feats_c, feats_f = self.backbone.complete_result(feats_c, feats_i, feats_f)
         (feat_c0, feat_c1), (feat_f0, feat_f1) = feats_c.split(self.data['bs']), feats_f.split(self.data['bs'])
@@ -80,14 +74,10 @@ class LoFTR(nn.Module):
         feat_c0 = torch.flatten(self.pos_encoding(feat_c0), 2, 3).permute(0, 2, 1)
         feat_c1 = torch.flatten(self.pos_encoding(feat_c1), 2, 3).permute(0, 2, 1)
 
-        mask_c0 = mask_c1 = None  # mask is useful in training
-        if self.loftr_coarse_script is None:
-            feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1)  # , mask_c0, mask_c1)
-        else:
-            feat_c0, feat_c1 = self.loftr_coarse_script(feat_c0, feat_c1)
+        feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1)
 
         # 3. match coarse-level
-        self.coarse_matching(feat_c0, feat_c1, self.data, mask_c0=mask_c0, mask_c1=mask_c1)
+        self.coarse_matching(feat_c0, feat_c1, self.data)
 
         # 4. fine-level refinement
         self.data.update({'W': self.config['fine_window_size']})
@@ -97,10 +87,12 @@ class LoFTR(nn.Module):
             feat_f0_unfold, feat_f1_unfold = self.loftr_fine(feat_f0_unfold, feat_f1_unfold)
 
         # 5. match fine-level
-        self.fine_matching(feat_f0_unfold, feat_f1_unfold, self.data)
+        #self.fine_matching(feat_f0_unfold, feat_f1_unfold, self.data)
 
         # return data
-        return self.data['mkpts0_f'], self.data['mkpts1_f'], self.data['mconf']
+        #return self.data['mkpts0_f'], self.data['mkpts1_f'], self.data['mconf']
+
+        return feat_f0_unfold, feat_f1_unfold
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
