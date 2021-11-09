@@ -76,23 +76,25 @@ class LoFTR(nn.Module):
 
         feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1)
 
+
         # 3. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, self.data)
 
+        return self.data['mkpts0_c'], self.data['mkpts1_c'], self.data['mconf']
+
         # 4. fine-level refinement
-        self.data.update({'W': self.config['fine_window_size']})
-        feat_f0_unfold, feat_f1_unfold = self.fine_preprocess(feat_f0, feat_f1, feat_c0, feat_c1, self.data['b_ids'],
-                                                              self.data['i_ids'], self.data['j_ids'])
-        if feat_f0_unfold.nelement() != 0:  # at least one coarse level predicted
-            feat_f0_unfold, feat_f1_unfold = self.loftr_fine(feat_f0_unfold, feat_f1_unfold)
+        #feat_f0_unfold, feat_f1_unfold = self.fine_preprocess(feat_f0, feat_f1, feat_c0, feat_c1, self.data['b_ids'],
+        #                                                      self.data['i_ids'], self.data['j_ids'])
+        #if feat_f0_unfold.nelement() != 0:  # at least one coarse level predicted
+        #    feat_f0_unfold, feat_f1_unfold = self.loftr_fine(feat_f0_unfold, feat_f1_unfold)
 
         # 5. match fine-level
-        #self.fine_matching(feat_f0_unfold, feat_f1_unfold, self.data)
+        # self.fine_matching(feat_f0_unfold, feat_f1_unfold, self.data)
 
         # return data
-        #return self.data['mkpts0_f'], self.data['mkpts1_f'], self.data['mconf']
+        # return self.data['mkpts0_f'], self.data['mkpts1_f'], self.data['mconf']
 
-        return feat_f0_unfold, feat_f1_unfold
+        #return feat_f0_unfold, feat_f1_unfold
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):

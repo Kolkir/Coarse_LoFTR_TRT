@@ -95,11 +95,11 @@ class LocalFeatureTransformer(nn.Module):
         for i, layer in enumerate(self.layers):
             name = self.layer_names[i]
             if name == 'self':
-                feat0 = layer(feat0, feat0)  # , mask0, mask0)
-                feat1 = layer(feat1, feat1)  # , mask1, mask1)
+                feat0 = layer(feat0, feat0)
+                feat1 = layer(feat1, feat1)
             elif name == 'cross':
-                feat0 = layer(feat0, feat1)  # , mask0, mask1)
-                feat1 = layer(feat1, feat0)  # , mask1, mask0)
+                feat0 = layer(feat0, feat1)
+                feat1 = layer(feat1, feat0)
             else:
                 raise KeyError
 

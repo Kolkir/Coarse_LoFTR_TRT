@@ -3,6 +3,7 @@ import time
 import os
 
 from loftr import LoFTR, default_cfg
+from trtmodel import TRTModel
 import torch
 import cv2
 from camera import Camera
@@ -33,19 +34,19 @@ def main():
                         help='OpenCV webcam video capture ID, usually 0 or 1.')
     parser.add_argument('--device', type=str, default='cuda',
                         help='cpu or cuda')
-    parser.add_argument('--script', type=str,
-                        help='Use PyTorch script model')
+    parser.add_argument('--trt', type=str, help='TensorRT model engine path')
 
     opt = parser.parse_args()
     print(opt)
 
     device = torch.device(opt.device)
     print('Loading pre-trained network...')
-    jit_matcher = None
-    if opt.script is not None:
-        jit_matcher = torch.jit.load(opt.script)
-        print('Successfully loaded PyTorch script model.')
-    if jit_matcher is None:
+    use_trt = False
+    if os.path.exists(opt.trt):
+        matcher = TRTModel(opt.trt)
+        print('Successfully loaded TensorRT model.')
+        use_trt = True
+    else:
         matcher = LoFTR(config=default_cfg)
         checkpoint = torch.load(opt.weights)
         if checkpoint is not None:
@@ -58,18 +59,6 @@ def main():
             print('Failed to load checkpoint')
             return 1
         matcher = matcher.eval().to(device=device)
-
-        backbone_script = 'trt_loftr_backbone.pt'
-        if os.path.exists(backbone_script):
-            matcher.backbone_script = torch.jit.load(backbone_script)
-            print('Scripted backbone loaded')
-
-        coarse_script = 'trt_loftr_coarse.pt'
-        if os.path.exists(coarse_script):
-            matcher.loftr_coarse_script = torch.jit.load(coarse_script)
-            print('Scripted coarse loftr loaded')
-    else:
-        matcher = jit_matcher.eval().to(device=device)
 
     print('Opening camera...')
     camera = Camera(opt.camid)
@@ -92,7 +81,7 @@ def main():
                 if do_blur:
                     frame = cv2.blur(frame, (3, 3))
 
-                new_img = frame
+                new_img = frame.copy()
 
                 # make batch
                 if stop_frame is None:
@@ -102,31 +91,40 @@ def main():
                     frame0 = stop_frame
 
                 frame1 = make_query_image(frame, img_size)
-                img0 = torch.from_numpy(frame0)[None][None].to(device=device) / 255.0
-                img1 = torch.from_numpy(frame1)[None][None].to(device=device) / 255.0
+                if use_trt:
+                    img0 = frame0[None][None] / 255.0
+                    img1 = frame1[None][None] / 255.0
+                else:
+                    img0 = torch.from_numpy(frame0)[None][None].to(device=device) / 255.0
+                    img1 = torch.from_numpy(frame1)[None][None].to(device=device) / 255.0
 
                 # Inference with LoFTR and get prediction
                 start = time.perf_counter()
-                with torch.no_grad():
-                    mkpts0, mkpts1, mconf = matcher(img0, img1)
-                    mkpts0 = mkpts0.cpu().numpy()
-                    mkpts1 = mkpts1.cpu().numpy()
-                    mconf = mconf.cpu().numpy()
+                if use_trt:
+                    mconf, mkpts1, mkpts0,  = matcher(img0, img1)
+                    mkpts0 = mkpts0.reshape((-1, 2))
+                    mkpts1 = mkpts1.reshape((-1, 2))
+                else:
+                    with torch.no_grad():
+                        mkpts0, mkpts1, mconf = matcher(img0, img1)
+                        mkpts0 = mkpts0.cpu().numpy()
+                        mkpts1 = mkpts1.cpu().numpy()
+                        mconf = mconf.cpu().numpy()
                 infer_time = time.perf_counter() - start
 
                 # filter only the most confident features
                 n_top = 20
-                indices = np.argsort(mconf)
+                indices = np.argsort(mconf)[::-1]
                 indices = indices[:n_top]
                 mkpts0 = mkpts0[indices, :]
                 mkpts1 = mkpts1[indices, :]
 
-                left_image = stop_img.copy()
-                draw_features(left_image, mkpts0, img_size)
-                draw_features(new_img, mkpts1, img_size)
+            left_image = stop_img.copy()
+            draw_features(left_image, mkpts0, img_size)
+            draw_features(new_img, mkpts1, img_size)
 
-                # combine images
-                res_img = np.hstack((left_image, new_img))
+            # combine images
+            res_img = np.hstack((left_image, new_img))
 
             # draw FPS
             new_frame_time = time.perf_counter()
@@ -142,8 +140,8 @@ def main():
                 print('Quitting, \'q\' pressed.')
                 break
             if key == ord('s'):
-                stop_img = frame
-                stop_frame = make_query_image(frame, img_size)
+                stop_img = frame.copy()
+                stop_frame = make_query_image(stop_img, img_size)
             if key == ord('b'):
                 do_blur = not do_blur
             if key == ord('p'):

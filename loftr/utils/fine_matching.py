@@ -34,16 +34,15 @@ class FineMatching(nn.Module):
 
         # corner case: if no coarse matches found
 
-        # DISABLED for script export - looks that it should be a very rare case ?
-        # if torch.eq(torch.tensor(0), M):
-        #     assert self.training == False, "M is always >0, when training, see coarse_matching.py"
-        #     # logger.warning('No matches found in coarse-level.')
-        #     data.update({
-        #         'expec_f': torch.empty(0, 3, device=feat_f0.device),
-        #         'mkpts0_f': data['mkpts0_c'],
-        #         'mkpts1_f': data['mkpts1_c'],
-        #     })
-        #     return
+        if torch.eq(torch.tensor(0), M):
+            assert self.training == False, "M is always >0, when training, see coarse_matching.py"
+            # logger.warning('No matches found in coarse-level.')
+            data.update({
+                'expec_f': torch.empty(0, 3, device=feat_f0.device),
+                'mkpts0_f': data['mkpts0_c'],
+                'mkpts1_f': data['mkpts1_c'],
+            })
+            return
 
         feat_f0_picked = feat_f0[:, WW//2, :]
         sim_matrix = torch.einsum('mc,mrc->mr', feat_f0_picked, feat_f1)
@@ -52,14 +51,6 @@ class FineMatching(nn.Module):
 
         # compute coordinates from heatmap
         coords_normalized = dsnt.spatial_expectation2d(heatmap[None], True)[0]  # [M, 2]
-        grid_normalized = create_meshgrid(W, W, True, heatmap.device).reshape(1, -1, 2)  # [1, WW, 2]
-
-        # compute std over <x, y>
-        var = torch.sum(grid_normalized**2 * heatmap.view(-1, WW, 1), dim=1) - coords_normalized**2  # [M, 2]
-        std = torch.sum(torch.sqrt(torch.clamp(var, min=1e-10)), -1)  # [M]  clamp needed for numerical stability
-        
-        # for fine-level supervision
-        data.update({'expec_f': torch.cat([coords_normalized, std.unsqueeze(1)], -1)})
 
         # compute absolute kpt coords
         self.get_fine_match(coords_normalized, data)
