@@ -50,7 +50,7 @@ def make_query_image(frame, img_size):
     scale_h = img_size[1] / img_h
     scale_w = img_size[0] / img_w
     scale_max = max(scale_h, scale_w)
-    new_size = [int(img_w * scale_max), int(img_h * scale_max)]
+    new_size = (int(img_w * scale_max), int(img_h * scale_max))
     query_img = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     query_img = cv2.resize(query_img, new_size, interpolation=cv2.INTER_LINEAR)
     # center crop
