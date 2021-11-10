@@ -1,29 +1,10 @@
 import argparse
 import time
 import os
-
-from loftr import LoFTR, default_cfg
-from trtmodel import TRTModel
-import torch
 import cv2
-from camera import Camera
 import numpy as np
-
-
-def make_query_image(frame, img_size):
-    # ratio preserving resize
-    img_h, img_w, _ = frame.shape
-    scale_h = img_size[1] / img_h
-    scale_w = img_size[0] / img_w
-    scale_max = max(scale_h, scale_w)
-    new_size = [int(img_w * scale_max), int(img_h * scale_max)]
-    query_img = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    query_img = cv2.resize(query_img, new_size, interpolation=cv2.INTER_LINEAR)
-    # center crop
-    x = new_size[0] // 2 - img_size[0] // 2
-    y = new_size[1] // 2 - img_size[1] // 2
-    query_img = query_img[y:y + img_size[1], x:x + img_size[0]]
-    return query_img
+from camera import Camera
+from utils import make_query_image, get_coarse_match
 
 
 def main():
@@ -39,18 +20,22 @@ def main():
     opt = parser.parse_args()
     print(opt)
 
-    device = torch.device(opt.device)
     print('Loading pre-trained network...')
     use_trt = False
-    if os.path.exists(opt.trt):
+    if opt.trt and os.path.exists(opt.trt):
+        from trtmodel import TRTModel
         matcher = TRTModel(opt.trt)
         print('Successfully loaded TensorRT model.')
         use_trt = True
     else:
+        # import torch only it's required because it occupies too much memory
+        from loftr import LoFTR, default_cfg
+        import torch
+        device = torch.device(opt.device)
         matcher = LoFTR(config=default_cfg)
         checkpoint = torch.load(opt.weights)
         if checkpoint is not None:
-            missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'])
+            missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
             if len(missed_keys) > 0:
                 print('Checkpoint is broken')
                 return 1
@@ -73,6 +58,7 @@ def main():
     do_pause = False
 
     img_size = (640, 480)
+    loftr_coarse_resolution = 8
 
     while True:
         frame, ret = camera.get_frame()
@@ -101,15 +87,15 @@ def main():
                 # Inference with LoFTR and get prediction
                 start = time.perf_counter()
                 if use_trt:
-                    mconf, mkpts1, mkpts0,  = matcher(img0, img1)
-                    mkpts0 = mkpts0.reshape((-1, 2))
-                    mkpts1 = mkpts1.reshape((-1, 2))
+                    conf_matrix = matcher(img0, img1)
+                    conf_matrix = conf_matrix.reshape((1, 4800, 4800))
                 else:
                     with torch.no_grad():
-                        mkpts0, mkpts1, mconf = matcher(img0, img1)
-                        mkpts0 = mkpts0.cpu().numpy()
-                        mkpts1 = mkpts1.cpu().numpy()
-                        mconf = mconf.cpu().numpy()
+                        conf_matrix = matcher(img0, img1)
+                        conf_matrix = conf_matrix.cpu().numpy()
+
+                mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, img_size[1], img_size[0], loftr_coarse_resolution)
+
                 infer_time = time.perf_counter() - start
 
                 # filter only the most confident features

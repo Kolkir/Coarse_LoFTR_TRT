@@ -19,7 +19,7 @@ def main():
     matcher = LoFTR(config=default_cfg)
     checkpoint = torch.load(opt.weights)
     if checkpoint is not None:
-        missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'])
+        missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
         if len(missed_keys) > 0:
             print('Checkpoint is broken')
             return 1
@@ -31,7 +31,7 @@ def main():
 
     with torch.no_grad():
         dummy_image = torch.randn(1, 1, default_cfg['input_height'], default_cfg['input_width'], device=device)
-        torch.onnx.export(matcher, (dummy_image, dummy_image), 'loftr.onnx', verbose=True, opset_version=13)
+        torch.onnx.export(matcher, (dummy_image, dummy_image), 'loftr.onnx', verbose=True, opset_version=11)
 
 
 if __name__ == "__main__":

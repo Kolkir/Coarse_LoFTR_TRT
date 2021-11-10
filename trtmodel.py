@@ -71,4 +71,4 @@ class TRTModel:
             cuda.memcpy_dtoh_async(out.host, out.device, self.stream)
 
         self.stream.synchronize()
-        return [out.host for out in self.outputs]
+        return self.outputs[0].host
