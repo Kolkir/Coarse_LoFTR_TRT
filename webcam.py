@@ -43,6 +43,8 @@ def main():
         else:
             print('Failed to load checkpoint')
             return 1
+
+    if not use_trt:
         matcher = matcher.eval().to(device=device)
 
     print('Opening camera...')
