@@ -30,21 +30,24 @@ def main():
     else:
         # import torch only it's required because it occupies too much memory
         from loftr import LoFTR, default_cfg
+        from utils import make_student_config
         import torch
-        device = torch.device(opt.device)
+
+        make_student_config(default_cfg)
         matcher = LoFTR(config=default_cfg)
-        checkpoint = torch.load(opt.weights)
-        if checkpoint is not None:
-            missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
-            if len(missed_keys) > 0:
-                print('Checkpoint is broken')
-                return 1
-            print('Successfully loaded pre-trained weights.')
-        else:
-            print('Failed to load checkpoint')
-            return 1
+        # checkpoint = torch.load(opt.weights)
+        # if checkpoint is not None:
+        #     missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
+        #     if len(missed_keys) > 0:
+        #         print('Checkpoint is broken')
+        #         return 1
+        #     print('Successfully loaded pre-trained weights.')
+        # else:
+        #     print('Failed to load checkpoint')
+        #     return 1
 
     if not use_trt:
+        device = torch.device(opt.device)
         matcher = matcher.eval().to(device=device)
 
     print('Opening camera...')
