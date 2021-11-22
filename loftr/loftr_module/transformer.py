@@ -41,7 +41,7 @@ class LoFTREncoderLayer(nn.Module):
             x_mask (torch.Tensor): [N, L] (optional)
             source_mask (torch.Tensor): [N, S] (optional)
         """
-        bs = x.shape[0]
+        bs = 1  # x.shape[0]
         query, key, value = x, source, source
 
         # multi-head attention
