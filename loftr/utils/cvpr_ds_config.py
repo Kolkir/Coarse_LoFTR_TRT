@@ -10,8 +10,6 @@ def lower_config(yacs_cfg):
 _CN = CN()
 _CN.BACKBONE_TYPE = 'ResNetFPN'
 _CN.RESOLUTION = (8, 2)  # options: [(8, 2)]
-_CN.FINE_WINDOW_SIZE = 5  # window_size in fine_level, must be odd
-_CN.FINE_CONCAT_COARSE_FEAT = True
 _CN.INPUT_WIDTH = 640
 _CN.INPUT_HEIGHT = 480
 
@@ -26,26 +24,12 @@ _CN.COARSE.D_MODEL = 256
 _CN.COARSE.D_FFN = 256
 _CN.COARSE.NHEAD = 8
 _CN.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
-_CN.COARSE.ATTENTION = 'linear'
 _CN.COARSE.TEMP_BUG_FIX = False
 
 # 3. Coarse-Matching config
 _CN.MATCH_COARSE = CN()
-_CN.MATCH_COARSE.THR = 0.2
+
 _CN.MATCH_COARSE.BORDER_RM = 2
 _CN.MATCH_COARSE.DSMAX_TEMPERATURE = 0.1
-_CN.MATCH_COARSE.SKH_ITERS = 3
-_CN.MATCH_COARSE.SKH_INIT_BIN_SCORE = 1.0
-_CN.MATCH_COARSE.SKH_PREFILTER = True
-_CN.MATCH_COARSE.TRAIN_COARSE_PERCENT = 0.4  # training tricks: save GPU memory
-_CN.MATCH_COARSE.TRAIN_PAD_NUM_GT_MIN = 200  # training tricks: avoid DDP deadlock
-
-# 4. LoFTR-fine module config
-_CN.FINE = CN()
-_CN.FINE.D_MODEL = 128
-_CN.FINE.D_FFN = 128
-_CN.FINE.NHEAD = 8
-_CN.FINE.LAYER_NAMES = ['self', 'cross'] * 1
-_CN.FINE.ATTENTION = 'linear'
 
 default_cfg = lower_config(_CN)

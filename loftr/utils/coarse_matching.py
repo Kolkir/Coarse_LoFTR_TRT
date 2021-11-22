@@ -7,7 +7,6 @@ class CoarseMatching(nn.Module):
     def __init__(self, config):
         super().__init__()
         # general config
-        self.thr = config['thr']
         self.border_rm = config['border_rm']
         self.temperature = config['dsmax_temperature']
 

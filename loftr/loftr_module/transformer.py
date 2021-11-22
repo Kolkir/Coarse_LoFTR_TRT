@@ -7,8 +7,7 @@ from .linear_attention import LinearAttention
 class LoFTREncoderLayer(nn.Module):
     def __init__(self,
                  d_model,
-                 nhead,
-                 attention='linear'):
+                 nhead):
         super(LoFTREncoderLayer, self).__init__()
 
         self.dim = d_model // nhead
@@ -70,7 +69,7 @@ class LocalFeatureTransformer(nn.Module):
         self.d_model = config['d_model']
         self.nhead = config['nhead']
         self.layer_names = config['layer_names']
-        encoder_layer = LoFTREncoderLayer(config['d_model'], config['nhead'], config['attention'])
+        encoder_layer = LoFTREncoderLayer(config['d_model'], config['nhead'])
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
         self._reset_parameters()
 
