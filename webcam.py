@@ -93,7 +93,8 @@ def main():
                 start = time.perf_counter()
                 if use_trt:
                     conf_matrix = matcher(img0, img1)
-                    conf_matrix = conf_matrix.reshape((1, 4800, 4800))
+                    # conf_matrix = conf_matrix.reshape((1, 4800, 4800))
+                    conf_matrix = conf_matrix.reshape((1, 1200, 1200))
                 else:
                     with torch.no_grad():
                         conf_matrix = matcher(img0, img1)
