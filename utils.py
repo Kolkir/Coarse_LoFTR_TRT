@@ -3,8 +3,9 @@ import numpy as np
 
 
 def make_student_config(config):
+    config['resolution'] = (16, 4)
     config['resnetfpn']['initial_dim'] = 8
-    config['resnetfpn']['block_dims'] = [8, 16, 32]  # s1, s2, s3
+    config['resnetfpn']['block_dims'] = [8, 16, 32, 32]  # s1, s2, s3
 
     config['coarse']['d_model'] = 32
     config['coarse']['d_ffn'] = 32

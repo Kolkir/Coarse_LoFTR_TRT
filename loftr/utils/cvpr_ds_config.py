@@ -9,7 +9,7 @@ def lower_config(yacs_cfg):
 
 _CN = CN()
 _CN.BACKBONE_TYPE = 'ResNetFPN'
-_CN.RESOLUTION = (8, 2)  # options: [(8, 2)]
+_CN.RESOLUTION = (8, 2)  # options: [(8, 2), (16, 2)]
 _CN.INPUT_WIDTH = 640
 _CN.INPUT_HEIGHT = 480
 

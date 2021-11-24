@@ -63,7 +63,7 @@ def main():
     do_pause = False
 
     img_size = (640, 480)
-    loftr_coarse_resolution = 8
+    loftr_coarse_resolution = 16  # 8
 
     while True:
         frame, ret = camera.get_frame()
