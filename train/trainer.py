@@ -1,35 +1,201 @@
-from src.basetrainer import BaseTrainer
-from src.losses import DetectorLoss
-from src.coco_dataset import CocoDataset
-from src.synthetic_dataset import SyntheticDataset
+import os
+
+import cv2
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
+
+from train.mvsdataset import MVSDataset
+from train.saveutils import load_last_checkpoint, save_checkpoint
+from utils import get_coarse_match
+from loftr import LoFTR, default_cfg
+from utils import make_student_config
 
 
-class Trainer(BaseTrainer):
-    def __init__(self, dataset_path, checkpoint_path, settings, use_coco=False):
-        if use_coco:
-            self.train_dataset = CocoDataset(dataset_path, settings, 'train', do_augmentation=False)
-            self.test_dataset = CocoDataset(dataset_path, settings, 'test', do_augmentation=False)
-        else:
-            self.train_dataset = SyntheticDataset(dataset_path, settings, 'train')
-            self.test_dataset = SyntheticDataset(dataset_path, settings, 'test')
-        super(Trainer, self).__init__(settings, checkpoint_path, self.train_dataset, self.test_dataset)
-        self.loss = DetectorLoss(self.settings.cuda, self.settings.cell)
+class Trainer(object):
+    def __init__(self, settings, dataset_path, checkpoint_path):
+        self.settings = settings
+        self.checkpoint_path = checkpoint_path
+        self.learning_rate = self.settings.learning_rate
+        self.epochs = self.settings.epochs
+        self.summary_writer = None
+        if self.settings.write_statistics:
+            self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
+        self.optimizer = None
 
-    def train_loss_fn(self, image, true_points, *args):
-        prob_map, descriptors, point_logits = self.model.forward(image)
-        # image shape [batch_dim, channels = 3, h, w]
-        if self.settings.cuda:
-            true_points = true_points.cuda()
-        loss_value = self.loss(point_logits, true_points, None)
-        self.last_prob_map = prob_map
-        self.last_labels = true_points
-        self.last_image = image
+        self.global_train_index = 0
+        self.last_image1 = None
+        self.last_image2 = None
+        self.last_conf_map_teacher = None
+        self.last_conf_map_student = None
+
+        print(f'Trainer is initialized with batch size = {self.settings.batch_size}')
+        print(f'Gradient accumulation batch size divider = {self.settings.batch_size_divider}')
+        print(f'Automatic Mixed Precision = {self.settings.use_amp}')
+
+        batch_size = self.settings.batch_size // self.settings.batch_size_divider
+        self.train_dataset = MVSDataset(dataset_path, (default_cfg['input_width'], default_cfg['input_height']))
+
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True,
+                                           num_workers=self.settings.data_loader_num_workers)
+
+        self.scaler = torch.cuda.amp.GradScaler()
+
+        self.teacher_model = LoFTR(config=default_cfg)
+        student_cfg = make_student_config(default_cfg)
+        self.student_model = LoFTR(config=student_cfg)
+
+        self.create_optimizer()
+
+    def add_image_summary(self, name, image1, image2, conf_map, config):
+        mkpts0, mkpts1, mconf = get_coarse_match(conf_map, config.input_height, config.input_width,
+                                                 config.resolution[0])
+        # filter only the most confident features
+        n_top = 20
+        indices = np.argsort(mconf)[::-1]
+        indices = indices[:n_top]
+        mkpts0 = mkpts0[indices, :]
+        mkpts1 = mkpts1[indices, :]
+
+        frame = image[0, :, :, :].cpu().numpy()
+        res_img = (frame * 255.).astype('uint8')
+        res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
+        res_img = cv2.UMat(res_img)
+        for point in points.T:
+            point_int = (int(round(point[0])), int(round(point[1])))
+            cv2.circle(res_img, point_int, 3, (255, 0, 0), -1, lineType=16)
+        for point in true_points.T:
+            point_int = (int(round(point[0])), int(round(point[1])))
+            cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.get().transpose([2, 0, 1]),
+                                      self.global_train_index)
+
+    def train_loop(self):
+        train_total_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
+        divider = torch.tensor(self.settings.batch_size_divider, device='cuda' if self.settings.cuda else 'cpu')
+        real_batch_index = 0
+        progress_bar = tqdm(self.train_dataloader)
+        for batch_index, batch in enumerate(progress_bar):
+            with torch.set_grad_enabled(True):
+                if self.settings.use_amp:
+                    with torch.cuda.amp.autocast():
+                        losses = self.train_loss_fn(*batch)
+                        # normalize loss to account for batch accumulation
+                        for loss in losses:
+                            loss /= divider
+                        loss = torch.stack(losses).sum()
+
+                    # Scales the loss, and calls backward()
+                    # to create scaled gradients
+                    self.scaler.scale(loss).backward()
+                    train_total_loss += loss.detach()
+                else:
+                    losses = self.train_loss_fn(*batch)
+                    # normalize loss to account for batch accumulation
+                    for loss in losses:
+                        loss /= divider
+                    loss = torch.stack(losses).sum()
+                    loss.backward()
+                    train_total_loss += loss.detach()
+
+                # gradient accumulation
+                if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
+                        batch_index + 1 == len(self.train_dataloader)):
+
+                    current_total_loss = train_total_loss / real_batch_index
+
+                    # save statistics
+                    if self.settings.write_statistics:
+                        self.write_batch_statistics(real_batch_index)
+
+                    if (real_batch_index + 1) % 10 == 0:
+                        cur_lr = [group['lr'] for group in self.optimizer.param_groups]
+                        progress_bar.set_postfix(
+                            {'Total loss': current_total_loss.item(),
+                             'Learning rate': cur_lr})
+
+                    # Optimizer step - apply gradients
+                    if self.settings.use_amp:
+                        # Unscales gradients and calls or skips optimizer.step()
+                        self.scaler.step(self.optimizer)
+                        # Updates the scale for next iteration
+                        self.scaler.update()
+                    else:
+                        self.optimizer.step()
+
+                    # Clear gradients
+                    # This does not zero the memory of each individual parameter,
+                    # also the subsequent backward pass uses assignment instead of addition to store gradients,
+                    # this reduces the number of memory operations -compared to optimizer.zero_grad()
+                    self.optimizer.zero_grad(set_to_none=True)
+
+                    self.global_train_index += 1
+                    real_batch_index += 1
+
+        train_loss = train_total_loss.item() / real_batch_index
+        return train_loss
+
+    def create_optimizer(self):
+        def exclude(n):
+            return "bn" in n or "bias" in n or "identity" in n
+
+        def include(n):
+            return not exclude(n)
+
+        named_parameters = list(self.student_model.named_parameters())
+        gain_or_bias_params = [p for n, p in named_parameters if exclude(n) and p.requires_grad]
+        rest_params = [p for n, p in named_parameters if include(n) and p.requires_grad]
+
+        self.optimizer = torch.optim.AdamW(
+            [
+                {"params": gain_or_bias_params, "weight_decay": 0.},
+                {"params": rest_params, "weight_decay": self.settings.optimizer_weight_decay},
+            ],
+            lr=self.settings.learning_rate,
+            betas=(self.settings.optimizer_beta1, self.settings.optimizer_beta2),
+            eps=self.settings.optimizer_eps,
+        )
+
+    def train(self, name):
+        # continue training starting from the latest epoch checkpoint
+        start_epoch = 0
+        prev_epoch = load_last_checkpoint(self.checkpoint_path, self.student_model, self.optimizer, self.scaler)
+        if prev_epoch >= 0:
+            start_epoch = prev_epoch + 1
+        epochs_num = start_epoch + self.epochs
+
+        self.global_train_index = 0
+
+        for epoch in range(start_epoch, epochs_num):
+            print(f"Epoch {epoch}\n-------------------------------")
+            self.student_model.train()
+            train_loss = self.train_loop()
+            print(f"Train Loss:{train_loss:7f} \n")
+            if self.settings.write_statistics:
+                self.summary_writer.add_scalar('Loss/train', train_loss, epoch)
+
+            save_checkpoint(name, epoch, self.student_model, self.optimizer, self.scaler, self.checkpoint_path)
+
+    def write_batch_statistics(self, batch_index):
+        if (batch_index + 1) % 100 == 0:
+            for name, param in self.student_model.named_parameters():
+                if param.grad is not None and 'bn' not in name:
+                    self.summary_writer.add_histogram(
+                        tag=f"params/{name}", values=param, global_step=self.global_train_index
+                    )
+                    self.summary_writer.add_histogram(
+                        tag=f"grads/{name}", values=param.grad, global_step=self.global_train_index
+                    )
+
+            # if self.last_image is not None:
+            #     self.add_image_summary('normal', self.last_image, self.last_prob_map, self.last_labels)
+
+    def train_loss_fn(self, image1, image2, *args):
+        with torch.no_grad():
+            self.teacher_conf_matrix = self.teacher_model.forward(image1, image2)
+        self.student_conf_matrix = self.student_model.forward(image1, image2)
+
+        loss_value = torch.Tensor(0)
         return [loss_value]
-
-    def test_loss_fn(self, image, point_labels, *args):
-        points_prob_map, descriptors, point_logits = self.model(image)
-        if self.settings.cuda:
-            point_labels = point_labels.cuda()
-        loss_value = self.loss(point_logits, point_labels, None)
-        return [loss_value], point_logits
-

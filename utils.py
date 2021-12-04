@@ -3,15 +3,16 @@ import numpy as np
 
 
 def make_student_config(config):
-    config['resolution'] = (16, 4)
-    config['resnetfpn']['initial_dim'] = 8
-    config['resnetfpn']['block_dims'] = [8, 16, 32, 32]  # s1, s2, s3
+    student_config = config.copy()
+    student_config['resolution'] = (16, 4)
+    student_config['resnetfpn']['initial_dim'] = 8
+    student_config['resnetfpn']['block_dims'] = [8, 16, 32, 32]  # s1, s2, s3
 
-    config['coarse']['d_model'] = 32
-    config['coarse']['d_ffn'] = 32
-    config['coarse']['nhead'] = 1
-    config['coarse']['layer_names'] = ['self', 'cross'] * 2
-
+    student_config['coarse']['d_model'] = 32
+    student_config['coarse']['d_ffn'] = 32
+    student_config['coarse']['nhead'] = 1
+    student_config['coarse']['layer_names'] = ['self', 'cross'] * 2
+    return student_config
 
 def get_coarse_match(conf_matrix, input_height, input_width, resolution):
     """
