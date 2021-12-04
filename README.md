@@ -9,7 +9,7 @@ The goal is to create TensorRT optimized inference script that can be used on th
 For the weights download please use the original [url](https://drive.google.com/drive/folders/1DOcOPZb3-5cWxLqn256AhwUVjBPifhuf?usp=sharing) that was provider by paper authors, the `outdoor-ds` file is only supported.
 
 TODO:
-- [+] Create a student model with reduced number of parameters
+- [x] Create a student model with reduced number of parameters
 - [ ] Develop a Knowledge distillation training pipe-line
 - [ ] Share the complete optimized PyTorch script
 
