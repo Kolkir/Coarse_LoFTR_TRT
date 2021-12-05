@@ -14,6 +14,7 @@ def make_student_config(config):
     student_config['coarse']['layer_names'] = ['self', 'cross'] * 2
     return student_config
 
+
 def get_coarse_match(conf_matrix, input_height, input_width, resolution):
     """
         Predicts coarse matches from conf_matrix
