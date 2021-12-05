@@ -1,11 +1,12 @@
 import os
 
 import cv2
+from tqdm import tqdm
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import torch.nn.functional as torch_func
 
 from train.mvsdataset import MVSDataset
 from train.saveutils import load_last_checkpoint, save_checkpoint
@@ -192,10 +193,15 @@ class Trainer(object):
             # if self.last_image is not None:
             #     self.add_image_summary('normal', self.last_image, self.last_prob_map, self.last_labels)
 
-    def train_loss_fn(self, image1, image2, *args):
+    def train_loss_fn(self, image1, image2):
         with torch.no_grad():
-            self.teacher_conf_matrix = self.teacher_model.forward(image1, image2)
-        self.student_conf_matrix = self.student_model.forward(image1, image2)
+            teacher_conf_matrix = self.teacher_model.forward(image1, image2)
+        student_conf_matrix = self.student_model.forward(image1, image2)
 
-        loss_value = torch.Tensor(0)
+        scaled_size = list(student_conf_matrix.size())[1:]
+        teacher_conf_matrix = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
+        teacher_conf_matrix = teacher_conf_matrix.squeeze(0)
+
+        loss_value = (teacher_conf_matrix - student_conf_matrix) ** 2
+        loss_value = torch.mean(loss_value)
         return [loss_value]
