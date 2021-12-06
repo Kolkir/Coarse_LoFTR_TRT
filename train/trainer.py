@@ -13,6 +13,7 @@ from train.saveutils import load_last_checkpoint, save_checkpoint
 from utils import get_coarse_match
 from loftr import LoFTR, default_cfg
 from utils import make_student_config
+from webcam import draw_features
 
 
 class Trainer(object):
@@ -29,8 +30,8 @@ class Trainer(object):
         self.global_train_index = 0
         self.last_image1 = None
         self.last_image2 = None
-        self.last_conf_map_teacher = None
-        self.last_conf_map_student = None
+        self.last_teacher_conf_matrix = None
+        self.last_student_conf_matrix = None
 
         print(f'Trainer is initialized with batch size = {self.settings.batch_size}')
         print(f'Gradient accumulation batch size divider = {self.settings.batch_size_divider}')
@@ -44,15 +45,24 @@ class Trainer(object):
 
         self.scaler = torch.cuda.amp.GradScaler()
 
-        self.teacher_model = LoFTR(config=default_cfg)
-        student_cfg = make_student_config(default_cfg)
-        self.student_model = LoFTR(config=student_cfg)
+        self.teacher_cfg = default_cfg
+        self.teacher_model = LoFTR(config=self.teacher_cfg)
+        self.student_cfg = make_student_config(default_cfg)
+        self.student_model = LoFTR(config=self.student_cfg)
 
         self.create_optimizer()
 
-    def add_image_summary(self, name, image1, image2, conf_map, config):
-        mkpts0, mkpts1, mconf = get_coarse_match(conf_map, config.input_height, config.input_width,
-                                                 config.resolution[0])
+    def tensor_to_image(self, image):
+        frame = image[0, :, :, :].cpu().numpy()
+        res_img = (frame * 255.).astype('uint8')
+        res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
+        res_img = cv2.UMat(res_img)
+        return res_img.get()
+
+    def add_image_summary(self, name, image1, image2, conf_matrix, config):
+        conf_matrix = conf_matrix.detach().numpy()
+        mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, config['input_height'], config['input_width'],
+                                                 config['resolution'][0])
         # filter only the most confident features
         n_top = 20
         indices = np.argsort(mconf)[::-1]
@@ -60,17 +70,17 @@ class Trainer(object):
         mkpts0 = mkpts0[indices, :]
         mkpts1 = mkpts1[indices, :]
 
-        frame = image[0, :, :, :].cpu().numpy()
-        res_img = (frame * 255.).astype('uint8')
-        res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
-        res_img = cv2.UMat(res_img)
-        for point in points.T:
-            point_int = (int(round(point[0])), int(round(point[1])))
-            cv2.circle(res_img, point_int, 3, (255, 0, 0), -1, lineType=16)
-        for point in true_points.T:
-            point_int = (int(round(point[0])), int(round(point[1])))
-            cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.get().transpose([2, 0, 1]),
+        img_size = (config['input_height'], config['input_width'])
+        image1 = self.tensor_to_image(image1)
+        draw_features(image1, mkpts0, img_size)
+        image2 = self.tensor_to_image(image2)
+        draw_features(image2, mkpts1, img_size)
+
+        # combine images
+        res_img = np.hstack((image1, image2))
+        res_img = res_img[None]
+
+        self.summary_writer.add_image(f'{name} result/train', res_img,
                                       self.global_train_index)
 
     def train_loop(self):
@@ -180,7 +190,7 @@ class Trainer(object):
             save_checkpoint(name, epoch, self.student_model, self.optimizer, self.scaler, self.checkpoint_path)
 
     def write_batch_statistics(self, batch_index):
-        if (batch_index + 1) % 100 == 0:
+        if (batch_index + 1) % self.settings.statistics_period == 0:
             for name, param in self.student_model.named_parameters():
                 if param.grad is not None and 'bn' not in name:
                     self.summary_writer.add_histogram(
@@ -190,8 +200,11 @@ class Trainer(object):
                         tag=f"grads/{name}", values=param.grad, global_step=self.global_train_index
                     )
 
-            # if self.last_image is not None:
-            #     self.add_image_summary('normal', self.last_image, self.last_prob_map, self.last_labels)
+            if self.last_image1 is not None and self.last_image1 is not None:
+                self.add_image_summary('teacher', self.last_image1, self.last_image2, self.last_teacher_conf_matrix,
+                                       self.teacher_cfg)
+                self.add_image_summary('student', self.last_image1, self.last_image2, self.last_student_conf_matrix,
+                                       self.student_cfg)
 
     def train_loss_fn(self, image1, image2):
         with torch.no_grad():
@@ -199,9 +212,16 @@ class Trainer(object):
         student_conf_matrix = self.student_model.forward(image1, image2)
 
         scaled_size = list(student_conf_matrix.size())[1:]
-        teacher_conf_matrix = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
-        teacher_conf_matrix = teacher_conf_matrix.squeeze(0)
+        teacher_conf_matrix_scaled = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
+        teacher_conf_matrix_scaled = teacher_conf_matrix_scaled.squeeze(0)
 
-        loss_value = (teacher_conf_matrix - student_conf_matrix) ** 2
+        loss_value = (teacher_conf_matrix_scaled - student_conf_matrix) ** 2
         loss_value = torch.mean(loss_value)
+
+        if self.settings.write_statistics:
+            self.last_image1 = image1
+            self.last_image2 = image2
+            self.last_teacher_conf_matrix = teacher_conf_matrix
+            self.last_student_conf_matrix = student_conf_matrix
+
         return [loss_value]

@@ -15,5 +15,6 @@ class TrainSettings:
         self.use_amp = False
         self.data_loader_num_workers = 0
         self.write_statistics = True
+        self.statistics_period = 1
 
         self.image_size = (640, 480)
