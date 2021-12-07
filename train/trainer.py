@@ -50,6 +50,10 @@ class Trainer(object):
         self.student_cfg = make_student_config(default_cfg)
         self.student_model = LoFTR(config=self.student_cfg)
 
+        if self.settings.cuda:
+            self.teacher_model = self.teacher_model.cuda()
+            self.student_model = self.student_model.cuda()
+
         self.create_optimizer()
 
     def tensor_to_image(self, image):
@@ -60,7 +64,7 @@ class Trainer(object):
         return res_img.get()
 
     def add_image_summary(self, name, image1, image2, conf_matrix, config):
-        conf_matrix = conf_matrix.detach().numpy()
+        conf_matrix = conf_matrix.detach().cpu().numpy()
         mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, config['input_height'], config['input_width'],
                                                  config['resolution'][0])
         # filter only the most confident features
@@ -207,6 +211,10 @@ class Trainer(object):
                                        self.student_cfg)
 
     def train_loss_fn(self, image1, image2):
+        if self.settings.cuda:
+            image1 = image1.cuda()
+            image2 = image2.cuda()
+
         with torch.no_grad():
             teacher_conf_matrix = self.teacher_model.forward(image1, image2)
         student_conf_matrix = self.student_model.forward(image1, image2)
@@ -215,7 +223,7 @@ class Trainer(object):
         teacher_conf_matrix_scaled = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
         teacher_conf_matrix_scaled = teacher_conf_matrix_scaled.squeeze(0)
 
-        loss_value = (teacher_conf_matrix_scaled - student_conf_matrix) ** 2
+        loss_value = (torch.log(teacher_conf_matrix_scaled) - torch.log(student_conf_matrix)) ** 2
         loss_value = torch.mean(loss_value)
 
         if self.settings.write_statistics:
