@@ -57,6 +57,8 @@ class Trainer(object):
 
         self.create_optimizer()
 
+        self.kl_loss = torch.nn.KLDivLoss()
+
     def tensor_to_image(self, image):
         frame = image[0, :, :, :].cpu().numpy()
         res_img = (frame * 255.).astype('uint8')
@@ -225,9 +227,9 @@ class Trainer(object):
         teacher_conf_matrix_scaled = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
         teacher_conf_matrix_scaled = teacher_conf_matrix_scaled.squeeze(0)
 
-        # loss_value = torch.log(teacher_conf_matrix_scaled - student_conf_matrix) ** 2
-        loss_value = (teacher_conf_matrix_scaled - student_conf_matrix) ** 2
-        loss_value = torch.mean(loss_value)
+        target = torch_func.softmax(torch.flatten(teacher_conf_matrix_scaled))
+        input = torch_func.log_softmax(torch.flatten(student_conf_matrix))
+        loss_value = self.kl_loss(input, target)
 
         if self.settings.write_statistics:
             self.last_image1 = image1
