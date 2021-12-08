@@ -38,7 +38,8 @@ class Trainer(object):
         print(f'Automatic Mixed Precision = {self.settings.use_amp}')
 
         batch_size = self.settings.batch_size // self.settings.batch_size_divider
-        self.train_dataset = MVSDataset(dataset_path, (default_cfg['input_width'], default_cfg['input_height']))
+        self.train_dataset = MVSDataset(dataset_path, (default_cfg['input_width'], default_cfg['input_height']),
+                                        epoch_size=1000)
 
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True,
                                            num_workers=self.settings.data_loader_num_workers)
@@ -192,6 +193,7 @@ class Trainer(object):
                 self.summary_writer.add_scalar('Loss/train', train_loss, epoch)
 
             save_checkpoint(name, epoch, self.student_model, self.optimizer, self.scaler, self.checkpoint_path)
+            self.train_dataset.reset_epoch()
 
     def write_batch_statistics(self, batch_index):
         if (batch_index + 1) % self.settings.statistics_period == 0:
@@ -223,7 +225,8 @@ class Trainer(object):
         teacher_conf_matrix_scaled = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
         teacher_conf_matrix_scaled = teacher_conf_matrix_scaled.squeeze(0)
 
-        loss_value = (torch.log(teacher_conf_matrix_scaled) - torch.log(student_conf_matrix)) ** 2
+        # loss_value = torch.log(teacher_conf_matrix_scaled - student_conf_matrix) ** 2
+        loss_value = (teacher_conf_matrix_scaled - student_conf_matrix) ** 2
         loss_value = torch.mean(loss_value)
 
         if self.settings.write_statistics:

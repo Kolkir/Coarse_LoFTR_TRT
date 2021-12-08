@@ -10,10 +10,11 @@ from utils import make_query_image
 
 
 class MVSDataset(Dataset):
-    def __init__(self, path, image_size, seed=0, size=0):
+    def __init__(self, path, image_size, seed=0, epoch_size=0):
         self.path = path
         self.image_size = image_size
         self.items = []
+        self.epoch_size = epoch_size
 
         mvs_folders = list(Path(self.path).glob('*'))
         for folder_name in mvs_folders:
@@ -22,9 +23,15 @@ class MVSDataset(Dataset):
             view_pairs = itertools.permutations(files, r=2)
             self.items.extend(view_pairs)
 
-        default_rng(seed).shuffle(self.items)
-        if size != 0:
-            self.items = self.items[:size]
+        self.rng = default_rng(seed)
+        self.rng.shuffle(self.items)
+        if epoch_size != 0:
+            self.epoch_items = self.items[:epoch_size]
+
+    def reset_epoch(self):
+        self.rng.shuffle(self.items)
+        if self.epoch_size != 0:
+            self.epoch_items = self.items[:self.epoch_size]
 
     def __getitem__(self, index):
         file_name1, file_name2 = self.items[index]
@@ -38,4 +45,6 @@ class MVSDataset(Dataset):
         return img1, img2
 
     def __len__(self):
+        if self.epoch_size != 0:
+            return self.epoch_size
         return len(self.items)
