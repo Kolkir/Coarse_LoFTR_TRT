@@ -9,12 +9,14 @@ def main():
                         help='Path to the dataset.')
     parser.add_argument('--checkpoint_path', type=str, default='/home/kirill/development/models/LoFTR',
                         help='Path to the dataset.')
+    parser.add_argument('--weights', type=str, default='weights/outdoor_ds.ckpt',
+                        help='Path to the LoFTR teacher network weights.')
 
     opt = parser.parse_args()
     print(opt)
 
     settings = TrainSettings()
-    trainer = Trainer(settings, opt.path, opt.checkpoint_path)
+    trainer = Trainer(settings, opt.weights, opt.path, opt.checkpoint_path)
     trainer.train('LoFTR')
 
 

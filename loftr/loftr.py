@@ -18,7 +18,7 @@ class LoFTR(nn.Module):
         self.pos_encoding = PositionEncodingSine(
             config['coarse']['d_model'],
             temp_bug_fix=config['coarse']['temp_bug_fix'])
-        self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
+        self.loftr_coarse = LocalFeatureTransformer(self.config['input_batch_size'], config['coarse'])
         self.coarse_matching = CoarseMatching(config['match_coarse'], config['coarse']['d_model'])
         self.data = dict()
 
@@ -31,7 +31,7 @@ class LoFTR(nn.Module):
         # we assume that data['hw0_i'] == data['hw1_i'] - faster & better BN convergence
         feats_c, feats_f= self.backbone(torch.cat([img0, img1], dim=0))
 
-        bs = 1
+        bs = self.config['input_batch_size']
         (feat_c0, feat_c1), (feat_f0, feat_f1) = feats_c.split(bs), feats_f.split(bs)
 
         return feat_c0, feat_f0, feat_c1, feat_f1

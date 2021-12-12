@@ -12,6 +12,7 @@ _CN.BACKBONE_TYPE = 'ResNetFPN'
 _CN.RESOLUTION = (8, 2)  # options: [(8, 2), (16, 2)]
 _CN.INPUT_WIDTH = 640
 _CN.INPUT_HEIGHT = 480
+_CN.INPUT_BATCH_SIZE = 1
 
 # 1. LoFTR-backbone (local feature CNN) config
 _CN.RESNETFPN = CN()

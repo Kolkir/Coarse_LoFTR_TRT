@@ -32,19 +32,20 @@ def main():
         from loftr import LoFTR, default_cfg
         from utils import make_student_config
         import torch
+        import torch.nn.functional
 
-        make_student_config(default_cfg)
+        # make_student_config(default_cfg)
         matcher = LoFTR(config=default_cfg)
-        # checkpoint = torch.load(opt.weights)
-        # if checkpoint is not None:
-        #     missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
-        #     if len(missed_keys) > 0:
-        #         print('Checkpoint is broken')
-        #         return 1
-        #     print('Successfully loaded pre-trained weights.')
-        # else:
-        #     print('Failed to load checkpoint')
-        #     return 1
+        checkpoint = torch.load(opt.weights)
+        if checkpoint is not None:
+            missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
+            if len(missed_keys) > 0:
+                print('Checkpoint is broken')
+                return 1
+            print('Successfully loaded pre-trained weights.')
+        else:
+            print('Failed to load checkpoint')
+            return 1
 
     if not use_trt:
         device = torch.device(opt.device)
@@ -98,6 +99,15 @@ def main():
                 else:
                     with torch.no_grad():
                         conf_matrix = matcher(img0, img1)
+
+                        scale = 2
+                        i_ids = torch.arange(start=0, end=1200,
+                                             device=conf_matrix.device) * scale
+                        j_ids = torch.arange(start=0, end=1200,
+                                             device=conf_matrix.device) * scale
+                        conf_matrix = torch.index_select(conf_matrix, 1, i_ids)
+                        conf_matrix = torch.index_select(conf_matrix, 2, j_ids)
+
                         conf_matrix = conf_matrix.cpu().numpy()
 
                 mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, img_size[1], img_size[0], loftr_coarse_resolution)
@@ -112,8 +122,8 @@ def main():
                 mkpts1 = mkpts1[indices, :]
 
             left_image = stop_img.copy()
-            draw_features(left_image, mkpts0, img_size)
-            draw_features(new_img, mkpts1, img_size)
+            draw_features(left_image, mkpts0, img_size, color=(0, 255, 0))
+            draw_features(new_img, mkpts1, img_size, color=(0, 255, 0))
 
             # combine images
             res_img = np.hstack((left_image, new_img))
@@ -154,15 +164,16 @@ def draw_inference(time_diff, image):
     cv2.putText(image, fps_str, (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
 
 
-def draw_features(image, features, img_size):
+def draw_features(image, features, img_size, color, draw_text=True):
     indices = range(len(features))
     sx = image.shape[1] / img_size[0]
     sy = image.shape[0] / img_size[1]
 
     for i, point in zip(indices, features):
         point_int = (int(round(point[0] * sx)), int(round(point[1] * sy)))
-        cv2.circle(image, point_int, 2, (0, 255, 0), -1, lineType=16)
-        cv2.putText(image, str(i), point_int, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 255, 100), 1, cv2.LINE_AA)
+        cv2.circle(image, point_int, 2, color, -1, lineType=16)
+        if draw_text:
+            cv2.putText(image, str(i), point_int, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
 
 if __name__ == "__main__":

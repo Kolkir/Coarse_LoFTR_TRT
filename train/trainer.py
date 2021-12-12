@@ -16,8 +16,26 @@ from utils import make_student_config
 from webcam import draw_features
 
 
+def softmax_with_temperature(x, t=1.0):
+    ex = torch.exp(x / t)
+    ex_sum = torch.sum(ex)
+    return ex / ex_sum
+
+
+def cross_entropy(input, target):
+    return -torch.sum(target * torch.log(input))
+
+
+def tensor_to_image(image):
+    frame = image[0, :, :, :].cpu().numpy()
+    res_img = (frame * 255.).astype('uint8')
+    res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
+    res_img = cv2.UMat(res_img)
+    return res_img.get()
+
+
 class Trainer(object):
-    def __init__(self, settings, dataset_path, checkpoint_path):
+    def __init__(self, settings, weights_path,  dataset_path, checkpoint_path):
         self.settings = settings
         self.checkpoint_path = checkpoint_path
         self.learning_rate = self.settings.learning_rate
@@ -47,41 +65,56 @@ class Trainer(object):
         self.scaler = torch.cuda.amp.GradScaler()
 
         self.teacher_cfg = default_cfg
+        self.teacher_cfg['input_batch_size'] = self.settings.batch_size
         self.teacher_model = LoFTR(config=self.teacher_cfg)
+        checkpoint = torch.load(weights_path)
+        if checkpoint is not None:
+            missed_keys, unexpected_keys = self.teacher_model.load_state_dict(checkpoint['state_dict'], strict=False)
+            if len(missed_keys) > 0:
+                print('Checkpoint is broken')
+                return 1
+            print('Teacher pre-trained weights were successfully loaded.')
+        else:
+            print('Failed to load checkpoint')
+
         self.student_cfg = make_student_config(default_cfg)
+        self.student_cfg['input_batch_size'] = self.settings.batch_size
         self.student_model = LoFTR(config=self.student_cfg)
 
         if self.settings.cuda:
             self.teacher_model = self.teacher_model.cuda()
             self.student_model = self.student_model.cuda()
 
-        self.create_optimizer()
+        # self.create_optimizer()
+        self.create_default_optimizer()
 
-        self.kl_loss = torch.nn.KLDivLoss()
+    def add_image_summary(self, name, image1, image2,
+                          teacher_conf_matrix,
+                          teacher_config,
+                          student_conf_matrix,
+                          student_config):
+        assert (teacher_config['input_height'] == student_config['input_height'])
+        assert (teacher_config['input_width'] == student_config['input_width'])
+        img_size = (teacher_config['input_height'], teacher_config['input_width'])
+        image1 = tensor_to_image(image1)
+        image2 = tensor_to_image(image2)
 
-    def tensor_to_image(self, image):
-        frame = image[0, :, :, :].cpu().numpy()
-        res_img = (frame * 255.).astype('uint8')
-        res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
-        res_img = cv2.UMat(res_img)
-        return res_img.get()
+        def draw_feature_points(conf_matrix, config, color):
+            conf_matrix = conf_matrix.detach().cpu().numpy()
+            mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, config['input_height'], config['input_width'],
+                                                     config['resolution'][0])
+            # filter only the most confident features
+            n_top = 20
+            indices = np.argsort(mconf)[::-1]
+            indices = indices[:n_top]
+            mkpts0 = mkpts0[indices, :]
+            mkpts1 = mkpts1[indices, :]
 
-    def add_image_summary(self, name, image1, image2, conf_matrix, config):
-        conf_matrix = conf_matrix.detach().cpu().numpy()
-        mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, config['input_height'], config['input_width'],
-                                                 config['resolution'][0])
-        # filter only the most confident features
-        n_top = 20
-        indices = np.argsort(mconf)[::-1]
-        indices = indices[:n_top]
-        mkpts0 = mkpts0[indices, :]
-        mkpts1 = mkpts1[indices, :]
+            draw_features(image1, mkpts0, img_size, color)
+            draw_features(image2, mkpts1, img_size, color)
 
-        img_size = (config['input_height'], config['input_width'])
-        image1 = self.tensor_to_image(image1)
-        draw_features(image1, mkpts0, img_size)
-        image2 = self.tensor_to_image(image2)
-        draw_features(image2, mkpts1, img_size)
+        draw_feature_points(teacher_conf_matrix[0, :, :].unsqueeze(0), teacher_config, (255, 255, 255))
+        draw_feature_points(student_conf_matrix[0, :, :].unsqueeze(0), student_config, (0, 0, 0))
 
         # combine images
         res_img = np.hstack((image1, image2))
@@ -176,6 +209,14 @@ class Trainer(object):
             eps=self.settings.optimizer_eps,
         )
 
+    def create_default_optimizer(self):
+        parameters = self.student_model.parameters()
+
+        self.optimizer = torch.optim.AdamW(
+            params=parameters,
+            lr=self.settings.learning_rate,
+        )
+
     def train(self, name):
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -186,9 +227,10 @@ class Trainer(object):
 
         self.global_train_index = 0
 
+        self.teacher_model.eval()
+        self.student_model.train()
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch}\n-------------------------------")
-            self.student_model.train()
             train_loss = self.train_loop()
             print(f"Train Loss:{train_loss:7f} \n")
             if self.settings.write_statistics:
@@ -200,7 +242,7 @@ class Trainer(object):
     def write_batch_statistics(self, batch_index):
         if (batch_index + 1) % self.settings.statistics_period == 0:
             for name, param in self.student_model.named_parameters():
-                if param.grad is not None and 'bn' not in name:
+                if param.grad is not None and 'bn' not in name and 'bias' not in name:
                     self.summary_writer.add_histogram(
                         tag=f"params/{name}", values=param, global_step=self.global_train_index
                     )
@@ -209,10 +251,12 @@ class Trainer(object):
                     )
 
             if self.last_image1 is not None and self.last_image1 is not None:
-                self.add_image_summary('teacher', self.last_image1, self.last_image2, self.last_teacher_conf_matrix,
-                                       self.teacher_cfg)
-                self.add_image_summary('student', self.last_image1, self.last_image2, self.last_student_conf_matrix,
-                                       self.student_cfg)
+                self.add_image_summary('Teacher+Student', self.last_image1, self.last_image2,
+                                       self.last_teacher_conf_matrix,
+                                       self.teacher_cfg,
+                                       self.last_student_conf_matrix,
+                                       self.student_cfg
+                                       )
 
     def train_loss_fn(self, image1, image2):
         if self.settings.cuda:
@@ -223,18 +267,23 @@ class Trainer(object):
             teacher_conf_matrix = self.teacher_model.forward(image1, image2)
         student_conf_matrix = self.student_model.forward(image1, image2)
 
-        scaled_size = list(student_conf_matrix.size())[1:]
-        teacher_conf_matrix_scaled = torch_func.interpolate(teacher_conf_matrix.unsqueeze(0), size=scaled_size)
-        teacher_conf_matrix_scaled = teacher_conf_matrix_scaled.squeeze(0)
+        scale = self.student_cfg['resolution'][0] // self.teacher_cfg['resolution'][0]
+        i_ids = torch.arange(start=0, end=student_conf_matrix.shape[1], device=student_conf_matrix.device) * scale
+        j_ids = torch.arange(start=0, end=student_conf_matrix.shape[2], device=student_conf_matrix.device) * scale
+        teacher_conf_matrix_scaled = torch.index_select(teacher_conf_matrix, 1, i_ids)
+        teacher_conf_matrix_scaled = torch.index_select(teacher_conf_matrix_scaled, 2, j_ids)
 
-        target = torch_func.softmax(torch.flatten(teacher_conf_matrix_scaled))
-        input = torch_func.log_softmax(torch.flatten(student_conf_matrix))
-        loss_value = self.kl_loss(input, target)
+        teacher_map = softmax_with_temperature(torch.flatten(teacher_conf_matrix_scaled), self.settings.temperature)
+        student_map = softmax_with_temperature(torch.flatten(student_conf_matrix), self.settings.temperature)
+        loss_value = cross_entropy(student_map, teacher_map)
+
+        # MSE
+        # loss_value = torch.mean((teacher_conf_matrix_scaled - student_conf_matrix)**2)
 
         if self.settings.write_statistics:
             self.last_image1 = image1
             self.last_image2 = image2
-            self.last_teacher_conf_matrix = teacher_conf_matrix
-            self.last_student_conf_matrix = student_conf_matrix
+            self.last_teacher_conf_matrix = teacher_conf_matrix.detach()
+            self.last_student_conf_matrix = student_conf_matrix.detach()
 
         return [loss_value]
