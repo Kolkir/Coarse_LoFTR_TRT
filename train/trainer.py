@@ -57,28 +57,30 @@ class Trainer(object):
 
         batch_size = self.settings.batch_size // self.settings.batch_size_divider
         self.train_dataset = MVSDataset(dataset_path, (default_cfg['input_width'], default_cfg['input_height']),
-                                        epoch_size=1000)
+                                        epoch_size=5000)
 
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True,
                                            num_workers=self.settings.data_loader_num_workers)
 
         self.scaler = torch.cuda.amp.GradScaler()
 
+        real_batch_size = self.settings.batch_size // self.settings.batch_size_divider
+
         self.teacher_cfg = default_cfg
-        self.teacher_cfg['input_batch_size'] = self.settings.batch_size
+        self.teacher_cfg['input_batch_size'] = real_batch_size
         self.teacher_model = LoFTR(config=self.teacher_cfg)
         checkpoint = torch.load(weights_path)
         if checkpoint is not None:
             missed_keys, unexpected_keys = self.teacher_model.load_state_dict(checkpoint['state_dict'], strict=False)
             if len(missed_keys) > 0:
                 print('Checkpoint is broken')
-                return 1
-            print('Teacher pre-trained weights were successfully loaded.')
+                exit(1)
+            print('Teachers pre-trained weights were successfully loaded.')
         else:
             print('Failed to load checkpoint')
 
         self.student_cfg = make_student_config(default_cfg)
-        self.student_cfg['input_batch_size'] = self.settings.batch_size
+        self.student_cfg['input_batch_size'] = real_batch_size
         self.student_model = LoFTR(config=self.student_cfg)
 
         if self.settings.cuda:
@@ -95,7 +97,7 @@ class Trainer(object):
                           student_config):
         assert (teacher_config['input_height'] == student_config['input_height'])
         assert (teacher_config['input_width'] == student_config['input_width'])
-        img_size = (teacher_config['input_height'], teacher_config['input_width'])
+        img_size = (teacher_config['input_width'], teacher_config['input_height'])
         image1 = tensor_to_image(image1)
         image2 = tensor_to_image(image2)
 
@@ -129,6 +131,7 @@ class Trainer(object):
         real_batch_index = 0
         progress_bar = tqdm(self.train_dataloader)
         for batch_index, batch in enumerate(progress_bar):
+            # with torch.autograd.detect_anomaly(): # detect nan's during backward
             with torch.set_grad_enabled(True):
                 if self.settings.use_amp:
                     with torch.cuda.amp.autocast():
@@ -273,8 +276,9 @@ class Trainer(object):
         teacher_conf_matrix_scaled = torch.index_select(teacher_conf_matrix, 1, i_ids)
         teacher_conf_matrix_scaled = torch.index_select(teacher_conf_matrix_scaled, 2, j_ids)
 
-        teacher_map = softmax_with_temperature(torch.flatten(teacher_conf_matrix_scaled), self.settings.temperature)
-        student_map = softmax_with_temperature(torch.flatten(student_conf_matrix), self.settings.temperature)
+        eps = 1e-7  # fix NAN values in log function
+        teacher_map = softmax_with_temperature(torch.flatten(teacher_conf_matrix_scaled) + eps, self.settings.temperature)
+        student_map = softmax_with_temperature(torch.flatten(student_conf_matrix) + eps, self.settings.temperature)
         loss_value = cross_entropy(student_map, teacher_map)
 
         # MSE

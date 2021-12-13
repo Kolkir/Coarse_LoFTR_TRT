@@ -9,6 +9,25 @@ import cv2
 from utils import make_query_image
 
 
+def get_view_pairs(file_name, files):
+    view_pairs = []
+    with open(file_name) as file:
+        lines = file.readlines()
+        for line in lines[1:]:
+            if len(line) > 3:
+                tokens = line.split()
+                pair_files = []
+                for token in tokens[1::2]:
+                    img_id = token.zfill(8)
+                    for img_file_name in files:
+                        text_name = str(img_file_name)
+                        if img_id in text_name and 'mask' not in text_name:
+                            pair_files.append(img_file_name)
+                pairs = itertools.permutations(pair_files, r=2)
+                view_pairs.extend(pairs)
+    return view_pairs
+
+
 class MVSDataset(Dataset):
     def __init__(self, path, image_size, seed=0, epoch_size=0):
         self.path = path
@@ -18,10 +37,13 @@ class MVSDataset(Dataset):
 
         mvs_folders = list(Path(self.path).glob('*'))
         for folder_name in mvs_folders:
-            folder_name = os.path.join(folder_name, 'blended_images')
-            files = list(Path(folder_name).glob('*.*'))
-            view_pairs = itertools.permutations(files, r=2)
-            self.items.extend(view_pairs)
+            images_folder = os.path.join(folder_name, 'blended_images')
+            files = list(Path(images_folder).glob('*.*'))
+
+            pairs_file = os.path.join(folder_name, 'cams', 'pair.txt')
+            if os.path.exists(pairs_file):
+                view_pairs = get_view_pairs(pairs_file, files)
+                self.items.extend(view_pairs)
 
         self.rng = default_rng(seed)
         self.rng.shuffle(self.items)
