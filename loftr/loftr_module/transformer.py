@@ -49,7 +49,7 @@ class LoFTREncoderLayer(nn.Module):
         query = self.q_proj(query).view(self.bs, -1, self.nhead, self.dim)  # [N, L, (H, D)]
         key = self.k_proj(key).view(self.bs, -1, self.nhead, self.dim)  # [N, S, (H, D)]
         value = self.v_proj(value).view(self.bs, -1, self.nhead, self.dim)
-        message = self.attention(query, key, value)  # q_mask=x_mask, kv_mask=source_mask)  # [N, L, (H, D)]
+        message = self.attention(query, key, value)   # [N, L, (H, D)]
         message = self.merge(message.view(self.bs, -1, self.nhead * self.dim))  # [N, L, C]
         message = self.norm1(message)
 

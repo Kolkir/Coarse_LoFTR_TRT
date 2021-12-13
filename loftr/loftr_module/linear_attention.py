@@ -35,13 +35,6 @@ class LinearAttention(Module):
         Q = self.feature_map(queries)
         K = self.feature_map(keys)
 
-        # set padded position to zero
-        # if q_mask is not None:
-        #     Q = Q * q_mask[:, :, None, None]
-        # if kv_mask is not None:
-        #     K = K * kv_mask[:, :, None, None]
-        #     values = values * kv_mask[:, :, None, None]
-
         v_length = values.size(1)
         values = values / v_length  # prevent fp16 overflow
 
