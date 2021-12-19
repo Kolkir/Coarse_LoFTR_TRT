@@ -33,15 +33,11 @@ class LoFTREncoderLayer(nn.Module):
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
 
-    # masks are used during training
-    # def forward(self, x, source, x_mask=None, source_mask=None):
     def forward(self, x, source):
         """
         Args:
             x (torch.Tensor): [N, L, C]
             source (torch.Tensor): [N, S, C]
-            x_mask (torch.Tensor): [N, L] (optional)
-            source_mask (torch.Tensor): [N, S] (optional)
         """
         query, key, value = x, source, source
 

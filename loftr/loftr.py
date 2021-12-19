@@ -20,7 +20,6 @@ class LoFTR(nn.Module):
             temp_bug_fix=config['coarse']['temp_bug_fix'])
         self.loftr_coarse = LocalFeatureTransformer(self.config['input_batch_size'], config['coarse'])
         self.coarse_matching = CoarseMatching(config['match_coarse'], config['coarse']['d_model'])
-        self.data = dict()
 
     def backbone_forward(self, img0, img1):
         """
