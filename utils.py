@@ -58,16 +58,21 @@ def get_coarse_match(conf_matrix, input_height, input_width, resolution):
 
 
 def make_query_image(frame, img_size):
+    query_img = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    query_img = ratio_preserving_resize(query_img, img_size)
+    return query_img
+
+
+def ratio_preserving_resize(image, img_size):
     # ratio preserving resize
-    img_h, img_w, _ = frame.shape
+    img_h, img_w = image.shape
     scale_h = img_size[1] / img_h
     scale_w = img_size[0] / img_w
     scale_max = max(scale_h, scale_w)
     new_size = (int(img_w * scale_max), int(img_h * scale_max))
-    query_img = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    query_img = cv2.resize(query_img, new_size, interpolation=cv2.INTER_LINEAR)
+    image = cv2.resize(image, new_size, interpolation=cv2.INTER_LINEAR)
     # center crop
     x = new_size[0] // 2 - img_size[0] // 2
     y = new_size[1] // 2 - img_size[1] // 2
-    query_img = query_img[y:y + img_size[1], x:x + img_size[0]]
-    return query_img
+    image = image[y:y + img_size[1], x:x + img_size[0]]
+    return image
