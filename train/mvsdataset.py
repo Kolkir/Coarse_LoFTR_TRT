@@ -273,6 +273,7 @@ class MVSDataset(Dataset):
         depth2_computed = depth2_computed[mask]
 
         depth2 = depth_hw2[coordinates2_clipped[:, 1], coordinates2_clipped[:, 0], np.newaxis]
+        depth2[depth2 == 0.0] = np.finfo(depth2.dtype).max
         depth_consistency_mask, _ = np.where(np.absolute((depth2 - depth2_computed) / depth2) < 0.2)
 
         coordinates2 = coordinates2[depth_consistency_mask]
