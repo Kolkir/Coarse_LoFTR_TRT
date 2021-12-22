@@ -30,8 +30,8 @@ class LoFTREncoderLayer(nn.Module):
         )
 
         # norm and dropout
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
+        self.norm1 = nn.LayerNorm(d_model, eps=1e-7)
+        self.norm2 = nn.LayerNorm(d_model, eps=1e-7)
 
     def forward(self, x, source):
         """
