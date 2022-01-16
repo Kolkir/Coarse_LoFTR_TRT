@@ -4,13 +4,16 @@ import os
 import cv2
 import numpy as np
 from camera import Camera
-from utils import make_query_image, get_coarse_match
+from loftr.utils.cvpr_ds_config import default_cfg
+from utils import make_query_image, get_coarse_match, make_student_config
 
 
 def main():
     parser = argparse.ArgumentParser(description='LoFTR demo.')
-    parser.add_argument('--weights', type=str, default= '/mnt/f405a161-1440-4419-9adf-1959bb1db1b2/development/models/LoFTR_teacher/LoFTR_46.pt',  # 'weights/outdoor_ds.ckpt',
+    parser.add_argument('--weights', type=str, default='/weights/LoFTR_teacher.pt',  # 'weights/outdoor_ds.ckpt',
                         help='Path to network weights.')
+    parser.add_argument('--original', action='store_true',
+                        help='If specified the original LoFTR model will be used.')
     parser.add_argument('--camid', type=int, default=0,
                         help='OpenCV webcam video capture ID, usually 0 or 1.')
     parser.add_argument('--device', type=str, default='cuda',
@@ -20,6 +23,11 @@ def main():
     opt = parser.parse_args()
     print(opt)
 
+    if opt.original:
+        model_cfg = default_cfg
+    else:
+        model_cfg = make_student_config(default_cfg)
+
     print('Loading pre-trained network...')
     use_trt = False
     if opt.trt and os.path.exists(opt.trt):
@@ -28,13 +36,11 @@ def main():
         print('Successfully loaded TensorRT model.')
         use_trt = True
     else:
-        # import torch only it's required because it occupies too much memory
-        from loftr import LoFTR, default_cfg
-        from utils import make_student_config
+        # import torch only if it's required because it occupies too much memory
+        from loftr import LoFTR
         import torch
         import torch.nn.functional
 
-        model_cfg = make_student_config(default_cfg)
         matcher = LoFTR(config=model_cfg)
         checkpoint = torch.load(opt.weights)
         if checkpoint is not None:
@@ -46,14 +52,13 @@ def main():
             if len(missed_keys) > 0:
                 print('Checkpoint is broken')
                 return 1
+            if not use_trt:
+                device = torch.device(opt.device)
+                matcher = matcher.eval().to(device=device)
             print('Successfully loaded pre-trained weights.')
         else:
             print('Failed to load checkpoint')
             return 1
-
-    if not use_trt:
-        device = torch.device(opt.device)
-        matcher = matcher.eval().to(device=device)
 
     print('Opening camera...')
     camera = Camera(opt.camid)
@@ -67,8 +72,8 @@ def main():
     do_blur = False
     do_pause = False
 
-    img_size = (640, 480)
-    loftr_coarse_resolution = 16  # 8
+    img_size = (model_cfg['input_width'], model_cfg['input_height'])
+    loftr_coarse_resolution = model_cfg['resolution'][0]
 
     while True:
         frame, ret = camera.get_frame()
@@ -98,20 +103,13 @@ def main():
                 start = time.perf_counter()
                 if use_trt:
                     conf_matrix = matcher(img0, img1)
-                    # conf_matrix = conf_matrix.reshape((1, 4800, 4800))
-                    conf_matrix = conf_matrix.reshape((1, 1200, 1200))
+                    if opt.original:
+                        conf_matrix = conf_matrix.reshape((1, 4800, 4800))
+                    else:
+                        conf_matrix = conf_matrix.reshape((1, 1200, 1200))
                 else:
                     with torch.no_grad():
-                        conf_matrix = matcher(img0, img1)
-
-                        # scale = 2
-                        # i_ids = torch.arange(start=0, end=1200,
-                        #                      device=conf_matrix.device) * scale
-                        # j_ids = torch.arange(start=0, end=1200,
-                        #                      device=conf_matrix.device) * scale
-                        # conf_matrix = torch.index_select(conf_matrix, 1, i_ids)
-                        # conf_matrix = torch.index_select(conf_matrix, 2, j_ids)
-
+                        conf_matrix, _ = matcher(img0, img1)
                         conf_matrix = conf_matrix.cpu().numpy()
 
                 mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, img_size[1], img_size[0], loftr_coarse_resolution)
