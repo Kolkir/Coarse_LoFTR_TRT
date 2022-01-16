@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--device', type=str, default='cuda',
                         help='cpu or cuda')
     parser.add_argument('--trt', type=str, help='TensorRT model engine path')
+    parser.add_argument('--onnx', type=str, help='ONNX model path')
 
     opt = parser.parse_args()
     print(opt)
@@ -30,11 +31,21 @@ def main():
 
     print('Loading pre-trained network...')
     use_trt = False
+    use_onnx = False
     if opt.trt and os.path.exists(opt.trt):
         from trtmodel import TRTModel
         matcher = TRTModel(opt.trt)
         print('Successfully loaded TensorRT model.')
         use_trt = True
+    elif opt.onnx and os.path.exists(opt.onnx):
+        import onnxruntime
+        if opt.device == 'cuda':
+            onnx_providers = ['CUDAExecutionProvider']
+        else:
+            onnx_providers = ['CPUExecutionProvider']
+        matcher = onnxruntime.InferenceSession(opt.onnx, providers=onnx_providers)
+        print(f'ONNX runtime device {onnxruntime.get_device()}')
+        use_onnx = True
     else:
         # import torch only if it's required because it occupies too much memory
         from loftr import LoFTR
@@ -92,7 +103,7 @@ def main():
                     frame0 = stop_frame
 
                 frame1 = make_query_image(frame, img_size)
-                if use_trt:
+                if use_trt or use_onnx:
                     img0 = frame0[None][None] / 255.0
                     img1 = frame1[None][None] / 255.0
                 else:
@@ -107,6 +118,11 @@ def main():
                         conf_matrix = conf_matrix.reshape((1, 4800, 4800))
                     else:
                         conf_matrix = conf_matrix.reshape((1, 1200, 1200))
+                elif use_onnx:
+                    onnx_inputs = {matcher.get_inputs()[0].name: img0.astype(np.float32),
+                                   matcher.get_inputs()[1].name: img1.astype(np.float32)}
+                    onnx_outputs = matcher.run(None, onnx_inputs)
+                    conf_matrix = onnx_outputs[0]
                 else:
                     with torch.no_grad():
                         conf_matrix, _ = matcher(img0, img1)
