@@ -43,21 +43,28 @@ class DataCamera:
         self.depth_max = 0
 
     def get_dir(self):
-        r = np.eye(4)
-        r[0:3, 0:3] = self.extrinsic[0:3, 0:3]
+        r = self.get_rot_matrix()
         r_inv = np.linalg.inv(r)
         z = np.array([0, 0, 1, 1])
         dir = z.dot(r_inv.T)
         return dir[:3]
 
     def get_pos(self):
-        r = np.eye(4)
-        r[0:3, 0:3] = self.extrinsic[0:3, 0:3]
+        t = self.extrinsic[:, 3]
+        return t
+
+    def get_pos_inv(self):
+        r = self.get_rot_matrix()
         r_inv = np.linalg.inv(r)
         t = self.extrinsic[:, 3]
         camera_pos = t.dot(r_inv.T)
         camera_pos[:3] *= -1
         return camera_pos[:3]
+
+    def get_rot_matrix(self):
+        r = np.eye(4)
+        r[0:3, 0:3] = self.extrinsic[0:3, 0:3]
+        return r
 
     def project_points(self, coordinates_3d):
         coordinates_cam = coordinates_3d.dot(self.extrinsic.T)
@@ -78,8 +85,7 @@ class DataCamera:
         coordinates_cam = np.hstack([coordinates_cam, np.ones_like(coordinates_cam[:, [0]])])
 
         # from camera to world space
-        r = np.eye(4)
-        r[0:3, 0:3] = self.extrinsic[0:3, 0:3]
+        r = self.get_rot_matrix()
         r_inv = np.linalg.inv(r)
         t = self.extrinsic[:, 3]
 
@@ -87,43 +93,6 @@ class DataCamera:
         coordinates_world = coordinates_cam.dot(r_inv.T)
 
         return coordinates_world
-
-
-def get_homographies(left_data_cam, right_data_cam):
-    r_left = left_data_cam.extrinsic[0:3, 0:3]
-    r_right = right_data_cam.extrinsic[0:3, 0:3]
-    t_left = left_data_cam.extrinsic[0:3, 3:]
-    t_right = right_data_cam.extrinsic[0:3, 3:]
-    k_left = left_data_cam.intrinsic
-    k_right = right_data_cam.intrinsic
-
-    depth_num = left_data_cam.depth_num
-    depth_start = left_data_cam.depth_min
-    depth = depth_start + np.arange(depth_num, dtype=float) * left_data_cam.depth_interval
-
-    k_left_inv = np.linalg.inv(k_left)
-    r_left_trans = np.transpose(r_left)
-    r_right_trans = np.transpose(r_right)
-
-    c_left = -np.matmul(r_left_trans, t_left)
-    c_right = -np.matmul(r_right_trans, t_right)
-    c_relative = c_right - c_left
-
-    fronto_direction = np.transpose(r_left[0:3, 2:])
-    temp_vec = np.matmul(c_relative, fronto_direction)
-
-    num_depth = depth.shape[0]
-    temp_vec = np.tile(np.expand_dims(temp_vec, axis=0), [num_depth, 1, 1])
-    depth_mat = np.tile(np.reshape(depth, [num_depth, 1, 1]), [1, 3, 3])
-
-    middle_mat0 = np.eye(3) - temp_vec / depth_mat
-    middle_mat1 = np.tile(np.expand_dims(np.matmul(r_left_trans, k_left_inv), axis=0), [num_depth, 1, 1])
-    middle_mat2 = np.matmul(middle_mat0, middle_mat1)
-
-    homographies = np.matmul(np.tile(k_right, [num_depth, 1, 1])
-                             , np.matmul(np.tile(r_right, [num_depth, 1, 1])
-                                         , middle_mat2))
-    return homographies
 
 
 def load_camera_matrices(file_name):
@@ -177,12 +146,15 @@ def load_pfm(file_name):
 
 
 class MVSDataset(Dataset):
-    def __init__(self, path, image_size, resolution, seed=0, epoch_size=0):
+    def __init__(self, path, image_size, resolution, depth_tolerance=0.005, seed=0, epoch_size=0,
+                 return_cams_info=False):
         self.path = path
         self.image_size = image_size
         self.items = []
         self.epoch_size = epoch_size
         self.resolution = resolution
+        self.return_cams_info = return_cams_info
+        self.depth_tolerance = depth_tolerance
 
         mvs_folders = list(Path(self.path).glob('*'))
         for folder_name in mvs_folders:
@@ -217,6 +189,7 @@ class MVSDataset(Dataset):
         (img_file_name1, cam_file_name1, depth_file_name1), (img_file_name2, cam_file_name2, depth_file_name2) = \
             self.items[index]
         img1 = cv2.imread(str(img_file_name1))
+        img_size_orig = np.array([img1.shape[1], img1.shape[0]])
         img1 = make_query_image(img1, self.image_size)
         img2 = cv2.imread(str(img_file_name2))
         img2 = make_query_image(img2, self.image_size)
@@ -224,13 +197,16 @@ class MVSDataset(Dataset):
         img1 = torch.from_numpy(img1)[None] / 255.0
         img2 = torch.from_numpy(img2)[None] / 255.0
 
-        conf_matrix = self.generate_groundtruth_confidence(cam_file_name1,
-                                                           depth_file_name1,
-                                                           cam_file_name2,
-                                                           depth_file_name2)
+        conf_matrix, camera1, camera2 = self.generate_groundtruth_confidence(cam_file_name1,
+                                                                             depth_file_name1,
+                                                                             cam_file_name2,
+                                                                             depth_file_name2)
         conf_matrix = torch.from_numpy(conf_matrix)[None]
 
-        return img1, img2, conf_matrix
+        if self.return_cams_info:
+            return img1, img2, conf_matrix, img_size_orig, camera1.intrinsic, camera1.get_rot_matrix(), camera1.get_pos_inv(), camera2.intrinsic, camera2.get_rot_matrix(), camera2.get_pos_inv()
+        else:
+            return img1, img2, conf_matrix
 
     def generate_groundtruth_confidence(self, cam_file_name1, depth_file_name1, cam_file_name2, depth_file_name2):
         data_camera1 = load_camera_matrices(cam_file_name1)
@@ -248,15 +224,6 @@ class MVSDataset(Dataset):
         coordinates_2d = np.hstack([coordinates_2d, np.ones_like(coordinates_2d[:, [0]])])
 
         depth1 = depth_hw1[coordinates_2d[:, 1], coordinates_2d[:, 0], np.newaxis]
-        # ------------------------------------------------------------------
-        # cam_pos = data_camera1.get_pos()
-        # test_pos = cam_pos + data_camera1.get_dir() * 100
-        # coordinates_3d_test = test_pos[None]
-        # coordinates_3d_test = np.hstack([coordinates_3d_test, np.ones_like(coordinates_3d_test[:, [0]])])
-        # depth1 = np.array([[100]])
-        #
-        # coordinates_2d = data_camera1.project_points(coordinates_3d_test)
-        # ------------------------------------------------------------------
         coordinates1_3d = data_camera1.back_project_points(coordinates_2d, depth1)
 
         coordinates2, depth2_computed = data_camera2.project_points(coordinates1_3d)
@@ -265,7 +232,7 @@ class MVSDataset(Dataset):
         coordinates2_clipped = np.around(coordinates2)
         mask = np.where(
             np.all((coordinates2_clipped[:, :2] >= (0, 0)) & (
-                        coordinates2_clipped[:, :2] < (original_image_size[1], original_image_size[0])),
+                    coordinates2_clipped[:, :2] < (original_image_size[1], original_image_size[0])),
                    axis=1))
         coordinates2_clipped = coordinates2_clipped[mask].astype(np.long)
         coordinates2 = coordinates2[mask]
@@ -274,10 +241,17 @@ class MVSDataset(Dataset):
 
         depth2 = depth_hw2[coordinates2_clipped[:, 1], coordinates2_clipped[:, 0], np.newaxis]
         depth2[depth2 == 0.0] = np.finfo(depth2.dtype).max
-        depth_consistency_mask, _ = np.where(np.absolute((depth2 - depth2_computed) / depth2) < 0.2)
+        depth_consistency_mask, _ = np.where(np.absolute((depth2 - depth2_computed) / depth2) < self.depth_tolerance)
 
         coordinates2 = coordinates2[depth_consistency_mask]
         coordinates_2d = coordinates_2d[depth_consistency_mask]
+
+        # filter image coordinates to satisfy the grid property
+        region_threshold = self.resolution / 3  # pixels
+        grid_mask = np.where(
+            np.all((self.resolution - coordinates2[:, :2] % self.resolution) <= region_threshold, axis=1))
+        coordinates2 = coordinates2[grid_mask]
+        coordinates_2d = coordinates_2d[grid_mask]
 
         # scale coordinates to the training size
         scale_w = self.image_size[0] / original_image_size[1]
@@ -311,7 +285,7 @@ class MVSDataset(Dataset):
         conf_matrix = np.zeros((h * w, h * w), dtype=float)
         conf_matrix[coordinates1.astype(np.long), coordinates2.astype(np.long)] = 1.0
 
-        return conf_matrix
+        return conf_matrix, data_camera1, data_camera2
 
     def __len__(self):
         if self.epoch_size != 0:

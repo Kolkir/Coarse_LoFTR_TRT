@@ -53,9 +53,9 @@ class LoFTR(nn.Module):
         feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1)
 
         # 3. match coarse-level
-        conf_matrix = self.coarse_matching(feat_c0, feat_c1)
+        conf_matrix, sim_matrix = self.coarse_matching(feat_c0, feat_c1)
 
-        return conf_matrix
+        return conf_matrix, sim_matrix
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):

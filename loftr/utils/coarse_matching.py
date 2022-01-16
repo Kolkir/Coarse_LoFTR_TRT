@@ -24,10 +24,10 @@ class CoarseMatching(nn.Module):
         feat_c0, feat_c1 = map(lambda feat: feat / self.d_size ** .5, [feat_c0, feat_c1])
 
         # sim_matrix_t = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1) / self.temperature
-        sim_matrix = torch.matmul(feat_c0, feat_c1.permute((0, 2, 1)))
-        sim_matrix /= self.temperature
+        sim_matrix_orig = torch.matmul(feat_c0, feat_c1.permute((0, 2, 1)))
+        sim_matrix = sim_matrix_orig / self.temperature
         # assert(torch.allclose(sim_matrix_t, sim_matrix, atol=1e-05))
 
         conf_matrix = F.softmax(sim_matrix, 1) * F.softmax(sim_matrix, 2)
 
-        return conf_matrix
+        return conf_matrix, sim_matrix_orig

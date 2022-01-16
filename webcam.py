@@ -9,7 +9,7 @@ from utils import make_query_image, get_coarse_match
 
 def main():
     parser = argparse.ArgumentParser(description='LoFTR demo.')
-    parser.add_argument('--weights', type=str, default='weights/outdoor_ds.ckpt',
+    parser.add_argument('--weights', type=str, default= '/mnt/f405a161-1440-4419-9adf-1959bb1db1b2/development/models/LoFTR_teacher/LoFTR_46.pt',  # 'weights/outdoor_ds.ckpt',
                         help='Path to network weights.')
     parser.add_argument('--camid', type=int, default=0,
                         help='OpenCV webcam video capture ID, usually 0 or 1.')
@@ -34,11 +34,15 @@ def main():
         import torch
         import torch.nn.functional
 
-        # make_student_config(default_cfg)
-        matcher = LoFTR(config=default_cfg)
+        model_cfg = make_student_config(default_cfg)
+        matcher = LoFTR(config=model_cfg)
         checkpoint = torch.load(opt.weights)
         if checkpoint is not None:
-            missed_keys, unexpected_keys = matcher.load_state_dict(checkpoint['state_dict'], strict=False)
+            if 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint['model_state_dict']
+            missed_keys, unexpected_keys = matcher.load_state_dict(state_dict, strict=False)
             if len(missed_keys) > 0:
                 print('Checkpoint is broken')
                 return 1
@@ -100,13 +104,13 @@ def main():
                     with torch.no_grad():
                         conf_matrix = matcher(img0, img1)
 
-                        scale = 2
-                        i_ids = torch.arange(start=0, end=1200,
-                                             device=conf_matrix.device) * scale
-                        j_ids = torch.arange(start=0, end=1200,
-                                             device=conf_matrix.device) * scale
-                        conf_matrix = torch.index_select(conf_matrix, 1, i_ids)
-                        conf_matrix = torch.index_select(conf_matrix, 2, j_ids)
+                        # scale = 2
+                        # i_ids = torch.arange(start=0, end=1200,
+                        #                      device=conf_matrix.device) * scale
+                        # j_ids = torch.arange(start=0, end=1200,
+                        #                      device=conf_matrix.device) * scale
+                        # conf_matrix = torch.index_select(conf_matrix, 1, i_ids)
+                        # conf_matrix = torch.index_select(conf_matrix, 2, j_ids)
 
                         conf_matrix = conf_matrix.cpu().numpy()
 

@@ -37,11 +37,11 @@ def get_coarse_match(conf_matrix, input_height, input_width, resolution):
 
     # 3. find all valid coarse matches
     # this only works when at most one `True` in each row
-    mask = conf_matrix
-    all_j_ids = mask.argmax(axis=2)
-    j_ids = all_j_ids.squeeze(0)
-    b_ids = np.zeros_like(j_ids, dtype=np.long)
-    i_ids = np.arange(feature_num, dtype=np.long)
+    b_ids, i_ids, j_ids  = np.nonzero(conf_matrix > 0.01)
+    # all_j_ids = mask.argmax(axis=2)
+    # j_ids = all_j_ids.squeeze(0)
+    # b_ids = np.zeros_like(j_ids, dtype=np.long)
+    # i_ids = np.arange(feature_num, dtype=np.long)
 
     mconf = conf_matrix[b_ids, i_ids, j_ids]
 
