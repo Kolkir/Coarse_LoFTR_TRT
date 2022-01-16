@@ -97,7 +97,6 @@ class Trainer(object):
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True,
                                            num_workers=self.settings.data_loader_num_workers)
 
-        # self.create_optimizer()
         self.create_default_optimizer()
 
     def add_image_summary(self, name, image1, image2,
@@ -229,27 +228,6 @@ class Trainer(object):
         student_mae = train_student_mae / real_batch_index
         train_loss = train_total_loss.item() / real_batch_index
         return train_loss, student_mae, teacher_mae
-
-    def create_optimizer(self):
-        def exclude(n):
-            return "bn" in n or "bias" in n or "identity" in n
-
-        def include(n):
-            return not exclude(n)
-
-        named_parameters = list(self.student_model.named_parameters())
-        gain_or_bias_params = [p for n, p in named_parameters if exclude(n) and p.requires_grad]
-        rest_params = [p for n, p in named_parameters if include(n) and p.requires_grad]
-
-        self.optimizer = torch.optim.AdamW(
-            [
-                {"params": gain_or_bias_params, "weight_decay": 0.},
-                {"params": rest_params, "weight_decay": self.settings.optimizer_weight_decay},
-            ],
-            lr=self.settings.learning_rate,
-            betas=(self.settings.optimizer_beta1, self.settings.optimizer_beta2),
-            eps=self.settings.optimizer_eps,
-        )
 
     def create_default_optimizer(self):
         parameters = self.student_model.parameters()
