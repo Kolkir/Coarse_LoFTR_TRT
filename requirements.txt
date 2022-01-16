@@ -3,4 +3,5 @@ torch~=1.10.1
 numpy~=1.22.0
 opencv-python~=4.5.5.62
 tqdm~=4.62.3
-scipy~=1.7.3
+onnx~=1.10.2
+onnxruntime-gpu
