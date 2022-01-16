@@ -10,7 +10,7 @@ from utils import make_query_image, get_coarse_match, make_student_config
 
 def main():
     parser = argparse.ArgumentParser(description='LoFTR demo.')
-    parser.add_argument('--weights', type=str, default='/weights/LoFTR_teacher.pt',  # 'weights/outdoor_ds.ckpt',
+    parser.add_argument('--weights', type=str, default='weights/LoFTR_teacher.pt',  # 'weights/outdoor_ds.ckpt',
                         help='Path to network weights.')
     parser.add_argument('--original', action='store_true',
                         help='If specified the original LoFTR model will be used.')

@@ -8,7 +8,7 @@ def main():
     parser.add_argument('--path', type=str, default='/data_sets/BlendedMVS',
                         help='Path to the dataset.')
     parser.add_argument('--checkpoint_path', type=str,
-                        default='/weights',
+                        default='weights',
                         help='Path to the dataset.')
     parser.add_argument('--weights', type=str, default='weights/outdoor_ds.ckpt',
                         help='Path to the LoFTR teacher network weights.')
