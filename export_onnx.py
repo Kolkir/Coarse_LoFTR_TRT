@@ -2,7 +2,7 @@ import argparse
 from loftr import LoFTR, default_cfg
 import torch
 import torch.nn.utils.prune as prune
-
+import onnx
 from utils import make_student_config
 
 
@@ -74,6 +74,9 @@ def main():
     with torch.no_grad():
         dummy_image = torch.randn(1, 1, default_cfg['input_height'], default_cfg['input_width'], device=device)
         torch.onnx.export(model, (dummy_image, dummy_image), opt.out_file, verbose=True, opset_version=11)
+
+    model = onnx.load(opt.out_file)
+    onnx.checker.check_model(model)
 
 
 if __name__ == "__main__":
