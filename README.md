@@ -28,6 +28,29 @@ Demo application shows a window with pair of images captured with a camera. Init
 
 ### Training
 
+To repeat the training procedure you should use the [BlendedMVS](https://github.com/YoYo000/BlendedMVS) dataset. After download you can use the `train.py` script to run training process. There are following parameters for this script:
+* `--path` - Path to the dataset
+* `--checkpoint_path` - Where to store a log information and checkpoints, default value is 'weights'
+* `--weights` - Path to the LoFTR teacher model weights, default value is 'weights/outdoor_ds.ckpt'
+                        
+Sample command line:
+```
+python3 train.py --path=/home/user/datasets/BlendedMVS --checkpoint_path=weights/experiment1/
+```
+
+Please use the `train/settings.py` script to configure the training process. Please notice that by default the following parameters are enabled:
+
+```
+self.batch_size = 32
+self.batch_size_divider = 8  # Used for gradient accumulation
+self.use_amp = True
+self.epochs = 35
+self.epoch_size = 5000
+```
+
+This set of parameters was chosen for training with the Nvidia GTX1060 GPU, which is the low level consumer level card. The `use_amp` parameter means the [automatic mixed precision](https://pytorch.org/docs/stable/amp.html) will be used to reduce the memory consumption and the training time. Also, the gradient accumulation technique is enabled with the `batch_size_divider` parameter, it means the actual batch size will be `32/8` but for larger batch size simulation the 8 batches will be averaged. Moreover, the actual size of the epoch is reduced with the `epoch_size` parameter, it means that on every epoch only 5000 dataset elements will be randomly picked from the whole dataset.
+
+
 [LoFTR Paper:](https://arxiv.org/pdf/2104.00680.pdf)
 
 ```bibtex
