@@ -9,7 +9,7 @@ def main():
                         help='Path to the dataset.')
     parser.add_argument('--checkpoint_path', type=str,
                         default='weights',
-                        help='Path to the dataset.')
+                        help='Where to store a log information and checkpoints.')
     parser.add_argument('--weights', type=str, default='weights/outdoor_ds.ckpt',
                         help='Path to the LoFTR teacher network weights.')
 
