@@ -13,7 +13,7 @@ class TrainSettings:
         self.scheduler_step_size = 15  # epochs
         self.scheduler_gamma = 0.01
 
-        self.with_teacher = False
+        self.with_teacher = True
         self.student_coeff = 0.3
         self.distillation_coeff = 1. - self.student_coeff
         self.temperature = 5.0
