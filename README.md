@@ -28,7 +28,7 @@ Demo application shows a window with pair of images captured with a camera. Init
 
 ### Training
 
-To repeat the training procedure you should use the [BlendedMVS](https://github.com/YoYo000/BlendedMVS) dataset. After download you can use the `train.py` script to run training process. There are following parameters for this script:
+To repeat the training procedure you should use the low-res set of the [BlendedMVS](https://github.com/YoYo000/BlendedMVS) dataset. After download you can use the `train.py` script to run training process. There are following parameters for this script:
 * `--path` - Path to the dataset
 * `--checkpoint_path` - Where to store a log information and checkpoints, default value is 'weights'
 * `--weights` - Path to the LoFTR teacher model weights, default value is 'weights/outdoor_ds.ckpt'
