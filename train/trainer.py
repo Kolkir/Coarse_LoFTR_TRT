@@ -16,16 +16,6 @@ from utils import make_student_config
 from webcam import draw_features
 
 
-def softmax_with_temperature(x, t=1.0):
-    ex = torch.exp(x / t)
-    ex_sum = torch.sum(ex)
-    return ex / ex_sum
-
-
-def cross_entropy(input, target):
-    return -torch.sum(target * torch.log(input))
-
-
 def tensor_to_image(image):
     frame = image[0, :, :, :].cpu().numpy()
     res_img = (frame * 255.).astype('uint8')
