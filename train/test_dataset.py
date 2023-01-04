@@ -1,18 +1,20 @@
 import argparse
-import numpy as np
+
 import cv2
+import numpy as np
 from torch.utils.data import DataLoader
+from trainer import tensor_to_image
 
 from loftr.utils.cvpr_ds_config import default_cfg
 from train.mvsdataset import MVSDataset
 from train.settings import TrainSettings
-from utils import make_student_config, get_coarse_match
-from trainer import tensor_to_image
+from utils import get_coarse_match, make_student_config
 from webcam import draw_features
 
-parser = argparse.ArgumentParser(description='LoFTR knowledge distillation.')
-parser.add_argument('--path', type=str, default='/data_sets/BlendedMVS',
-                    help='Path to the dataset.')
+parser = argparse.ArgumentParser(description="LoFTR knowledge distillation.")
+parser.add_argument(
+    "--path", type=str, default="/data_sets/BlendedMVS", help="Path to the dataset."
+)
 
 opt = parser.parse_args()
 print(opt)
@@ -20,12 +22,12 @@ print(opt)
 settings = TrainSettings()
 batch_size = settings.batch_size // settings.batch_size_divider
 student_cfg = make_student_config(default_cfg)
-img_size = (student_cfg['input_width'], student_cfg['input_height'])
-loftr_coarse_resolution = student_cfg['resolution'][0]
+img_size = (student_cfg["input_width"], student_cfg["input_height"])
+loftr_coarse_resolution = student_cfg["resolution"][0]
 dataset = MVSDataset(opt.path, img_size, loftr_coarse_resolution, epoch_size=5000)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-win_name = 'BlendedMVS dataset'
+win_name = "BlendedMVS dataset"
 cv2.namedWindow(win_name)
 
 for batch in dataloader:
@@ -34,7 +36,9 @@ for batch in dataloader:
     image2 = tensor_to_image(image2)
     conf_matrix = conf_matrix[0].cpu().numpy()
 
-    mkpts0, mkpts1, mconf = get_coarse_match(conf_matrix, img_size[1], img_size[0], loftr_coarse_resolution)
+    mkpts0, mkpts1, mconf = get_coarse_match(
+        conf_matrix, img_size[1], img_size[0], loftr_coarse_resolution
+    )
     n_top = 20
     indices = np.argsort(mconf)[::-1]
     indices = indices[:n_top]
@@ -48,6 +52,6 @@ for batch in dataloader:
 
     cv2.imshow(win_name, res_img)
     key = cv2.waitKey(delay=0)
-    if key == ord('q'):
-        print('Quitting, \'q\' pressed.')
+    if key == ord("q"):
+        print("Quitting, 'q' pressed.")
         break

@@ -1,15 +1,15 @@
-from torch.utils.data import Dataset
-import torch
 import itertools
 import os
+import re
 from pathlib import Path
-from numpy.random import default_rng
+
 import cv2
 import numpy as np
-import re
+import torch
+from numpy.random import default_rng
+from torch.utils.data import Dataset
 
 from utils import make_query_image, ratio_preserving_resize
-
 
 # Dataset parsing routines were taken from https://github.com/YoYo000/MVSNet/
 
@@ -24,10 +24,14 @@ def get_view_pairs(file_name, image_files, cams_files, depth_files):
                 pair_files = []
                 for token in tokens[1::2]:
                     img_id = token.zfill(8)
-                    for img_file_name, cam_file_name, depth_file_name in zip(image_files, cams_files, depth_files):
+                    for img_file_name, cam_file_name, depth_file_name in zip(
+                        image_files, cams_files, depth_files
+                    ):
                         text_name = str(img_file_name)
-                        if img_id in text_name and 'mask' not in text_name:
-                            pair_files.append((img_file_name, cam_file_name, depth_file_name))
+                        if img_id in text_name and "mask" not in text_name:
+                            pair_files.append(
+                                (img_file_name, cam_file_name, depth_file_name)
+                            )
                 pairs = itertools.permutations(pair_files, r=2)
                 view_pairs.extend(pairs)
     return view_pairs
@@ -70,7 +74,12 @@ class DataCamera:
         coordinates_cam = coordinates_3d.dot(self.extrinsic.T)
         coordinates_cam = coordinates_cam / coordinates_cam[:, [3]]
 
-        intrinsic_ex = np.pad(self.intrinsic, ((0, 0), (0, 1)), 'constant', constant_values=((0, 0), (0, 0)))
+        intrinsic_ex = np.pad(
+            self.intrinsic,
+            ((0, 0), (0, 1)),
+            "constant",
+            constant_values=((0, 0), (0, 0)),
+        )
         coordinates_2d = coordinates_cam.dot(intrinsic_ex.T)
         coordinates_2d = coordinates_2d / coordinates_2d[:, [2]]
         return coordinates_2d, coordinates_cam[:, [2]]
@@ -82,7 +91,9 @@ class DataCamera:
         coordinates_cam = coordinates_2d.dot(intrinsic_inv.T)  # [x, y, z]
 
         # make homogeneous
-        coordinates_cam = np.hstack([coordinates_cam, np.ones_like(coordinates_cam[:, [0]])])
+        coordinates_cam = np.hstack(
+            [coordinates_cam, np.ones_like(coordinates_cam[:, [0]])]
+        )
 
         # from camera to world space
         r = self.get_rot_matrix()
@@ -99,7 +110,7 @@ def load_camera_matrices(file_name):
     with open(file_name) as file:
         camera = DataCamera()
         words = file.read().split()
-        assert (len(words) == 31)
+        assert len(words) == 31
         for i in range(0, 4):
             for j in range(0, 4):
                 extrinsic_index = 4 * i + j + 1
@@ -118,25 +129,25 @@ def load_camera_matrices(file_name):
 
 
 def load_pfm(file_name):
-    with open(file_name, mode='rb') as file:
-        header = file.readline().decode('UTF-8').rstrip()
+    with open(file_name, mode="rb") as file:
+        header = file.readline().decode("UTF-8").rstrip()
 
-        if header == 'PF':
+        if header == "PF":
             color = True
-        elif header == 'Pf':
+        elif header == "Pf":
             color = False
         else:
-            raise Exception('Not a PFM file.')
-        dim_match = re.match(r'^(\d+)\s(\d+)\s$', file.readline().decode('UTF-8'))
+            raise Exception("Not a PFM file.")
+        dim_match = re.match(r"^(\d+)\s(\d+)\s$", file.readline().decode("UTF-8"))
         if dim_match:
             width, height = map(int, dim_match.groups())
         else:
-            raise Exception('Malformed PFM header.')
-        scale = float((file.readline()).decode('UTF-8').rstrip())
+            raise Exception("Malformed PFM header.")
+        scale = float((file.readline()).decode("UTF-8").rstrip())
         if scale < 0:  # little-endian
-            data_type = '<f'
+            data_type = "<f"
         else:
-            data_type = '>f'  # big-endian
+            data_type = ">f"  # big-endian
         data_string = file.read()
         data = np.fromstring(data_string, data_type)
         shape = (height, width, 3) if color else (height, width)
@@ -146,8 +157,16 @@ def load_pfm(file_name):
 
 
 class MVSDataset(Dataset):
-    def __init__(self, path, image_size, resolution, depth_tolerance=0.005, seed=0, epoch_size=0,
-                 return_cams_info=False):
+    def __init__(
+        self,
+        path,
+        image_size,
+        resolution,
+        depth_tolerance=0.005,
+        seed=0,
+        epoch_size=0,
+        return_cams_info=False,
+    ):
         self.path = path
         self.image_size = image_size
         self.items = []
@@ -156,23 +175,25 @@ class MVSDataset(Dataset):
         self.return_cams_info = return_cams_info
         self.depth_tolerance = depth_tolerance
 
-        mvs_folders = list(Path(self.path).glob('*'))
+        mvs_folders = list(Path(self.path).glob("*"))
         for folder_name in mvs_folders:
-            images_folder = os.path.join(folder_name, 'blended_images')
-            image_files = list(Path(images_folder).glob('*[0-9].*'))
+            images_folder = os.path.join(folder_name, "blended_images")
+            image_files = list(Path(images_folder).glob("*[0-9].*"))
             image_files.sort()
 
-            cams_folder = os.path.join(folder_name, 'cams')
-            cams_files = list(Path(cams_folder).glob('*cam.*'))
+            cams_folder = os.path.join(folder_name, "cams")
+            cams_files = list(Path(cams_folder).glob("*cam.*"))
             cams_files.sort()
 
-            depth_folder = os.path.join(folder_name, 'rendered_depth_maps')
-            depth_files = list(Path(depth_folder).glob('*.*'))
+            depth_folder = os.path.join(folder_name, "rendered_depth_maps")
+            depth_files = list(Path(depth_folder).glob("*.*"))
             depth_files.sort()
 
-            pairs_file = os.path.join(folder_name, 'cams', 'pair.txt')
+            pairs_file = os.path.join(folder_name, "cams", "pair.txt")
             if os.path.exists(pairs_file):
-                view_pairs = get_view_pairs(pairs_file, image_files, cams_files, depth_files)
+                view_pairs = get_view_pairs(
+                    pairs_file, image_files, cams_files, depth_files
+                )
                 self.items.extend(view_pairs)
 
         self.rng = default_rng(seed)
@@ -183,11 +204,14 @@ class MVSDataset(Dataset):
     def reset_epoch(self):
         self.rng.shuffle(self.items)
         if self.epoch_size != 0:
-            self.epoch_items = self.items[:self.epoch_size]
+            self.epoch_items = self.items[: self.epoch_size]
 
     def __getitem__(self, index):
-        (img_file_name1, cam_file_name1, depth_file_name1), (img_file_name2, cam_file_name2, depth_file_name2) = \
-            self.items[index]
+        (img_file_name1, cam_file_name1, depth_file_name1), (
+            img_file_name2,
+            cam_file_name2,
+            depth_file_name2,
+        ) = self.items[index]
         img1 = cv2.imread(str(img_file_name1))
         img_size_orig = np.array([img1.shape[1], img1.shape[0]])
         img1 = make_query_image(img1, self.image_size)
@@ -197,18 +221,30 @@ class MVSDataset(Dataset):
         img1 = torch.from_numpy(img1)[None] / 255.0
         img2 = torch.from_numpy(img2)[None] / 255.0
 
-        conf_matrix, camera1, camera2 = self.generate_groundtruth_confidence(cam_file_name1,
-                                                                             depth_file_name1,
-                                                                             cam_file_name2,
-                                                                             depth_file_name2)
+        conf_matrix, camera1, camera2 = self.generate_groundtruth_confidence(
+            cam_file_name1, depth_file_name1, cam_file_name2, depth_file_name2
+        )
         conf_matrix = torch.from_numpy(conf_matrix)[None]
 
         if self.return_cams_info:
-            return img1, img2, conf_matrix, img_size_orig, camera1.intrinsic, camera1.get_rot_matrix(), camera1.get_pos_inv(), camera2.intrinsic, camera2.get_rot_matrix(), camera2.get_pos_inv()
+            return (
+                img1,
+                img2,
+                conf_matrix,
+                img_size_orig,
+                camera1.intrinsic,
+                camera1.get_rot_matrix(),
+                camera1.get_pos_inv(),
+                camera2.intrinsic,
+                camera2.get_rot_matrix(),
+                camera2.get_pos_inv(),
+            )
         else:
             return img1, img2, conf_matrix
 
-    def generate_groundtruth_confidence(self, cam_file_name1, depth_file_name1, cam_file_name2, depth_file_name2):
+    def generate_groundtruth_confidence(
+        self, cam_file_name1, depth_file_name1, cam_file_name2, depth_file_name2
+    ):
         data_camera1 = load_camera_matrices(cam_file_name1)
         data_camera2 = load_camera_matrices(cam_file_name2)
 
@@ -221,7 +257,9 @@ class MVSDataset(Dataset):
         h = original_image_size[0] // self.resolution
 
         coordinates_2d = np.array(list(np.ndindex(w, h))) * self.resolution
-        coordinates_2d = np.hstack([coordinates_2d, np.ones_like(coordinates_2d[:, [0]])])
+        coordinates_2d = np.hstack(
+            [coordinates_2d, np.ones_like(coordinates_2d[:, [0]])]
+        )
 
         depth1 = depth_hw1[coordinates_2d[:, 1], coordinates_2d[:, 0], np.newaxis]
         coordinates1_3d = data_camera1.back_project_points(coordinates_2d, depth1)
@@ -231,17 +269,27 @@ class MVSDataset(Dataset):
         # check depth consistency
         coordinates2_clipped = np.around(coordinates2)
         mask = np.where(
-            np.all((coordinates2_clipped[:, :2] >= (0, 0)) & (
-                    coordinates2_clipped[:, :2] < (original_image_size[1], original_image_size[0])),
-                   axis=1))
+            np.all(
+                (coordinates2_clipped[:, :2] >= (0, 0))
+                & (
+                    coordinates2_clipped[:, :2]
+                    < (original_image_size[1], original_image_size[0])
+                ),
+                axis=1,
+            )
+        )
         coordinates2_clipped = coordinates2_clipped[mask].astype(np.long)
         coordinates2 = coordinates2[mask]
         coordinates_2d = coordinates_2d[mask]
         depth2_computed = depth2_computed[mask]
 
-        depth2 = depth_hw2[coordinates2_clipped[:, 1], coordinates2_clipped[:, 0], np.newaxis]
+        depth2 = depth_hw2[
+            coordinates2_clipped[:, 1], coordinates2_clipped[:, 0], np.newaxis
+        ]
         depth2[depth2 == 0.0] = np.finfo(depth2.dtype).max
-        depth_consistency_mask, _ = np.where(np.absolute((depth2 - depth2_computed) / depth2) < self.depth_tolerance)
+        depth_consistency_mask, _ = np.where(
+            np.absolute((depth2 - depth2_computed) / depth2) < self.depth_tolerance
+        )
 
         coordinates2 = coordinates2[depth_consistency_mask]
         coordinates_2d = coordinates_2d[depth_consistency_mask]
@@ -249,7 +297,12 @@ class MVSDataset(Dataset):
         # filter image coordinates to satisfy the grid property
         region_threshold = self.resolution / 3  # pixels
         grid_mask = np.where(
-            np.all((self.resolution - coordinates2[:, :2] % self.resolution) <= region_threshold, axis=1))
+            np.all(
+                (self.resolution - coordinates2[:, :2] % self.resolution)
+                <= region_threshold,
+                axis=1,
+            )
+        )
         coordinates2 = coordinates2[grid_mask]
         coordinates_2d = coordinates_2d[grid_mask]
 
@@ -273,8 +326,10 @@ class MVSDataset(Dataset):
         h = self.image_size[1] // self.resolution
 
         mask = np.where(
-            np.all((coordinates2[:, :2] >= (0, 0)) & (coordinates2[:, :2] < (w, h)),
-                   axis=1))
+            np.all(
+                (coordinates2[:, :2] >= (0, 0)) & (coordinates2[:, :2] < (w, h)), axis=1
+            )
+        )
         coordinates2 = coordinates2[mask][:, :2]
         coordinates1 = coordinates1[mask][:, :2]
 

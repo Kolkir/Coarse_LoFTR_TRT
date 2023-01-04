@@ -1,12 +1,13 @@
-import cv2
 from threading import Thread
+
+import cv2
 
 
 class Camera(object):
     def __init__(self, index):
         self.cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
         if not self.cap.isOpened():
-            print('Failed to open camera {0}'.format(index))
+            print("Failed to open camera {0}".format(index))
             exit(-1)
 
         # self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)

@@ -4,7 +4,7 @@ Modified from: https://github.com/idiap/fast-transformers/blob/master/fast_trans
 """
 
 import torch
-from torch.nn import Module, Dropout
+from torch.nn import Dropout, Module
 
 
 def elu_feature_map(x):
@@ -12,7 +12,7 @@ def elu_feature_map(x):
 
 
 class LinearAttention(Module):
-    def __init__(self,  nheads, dim, eps=1e-6):
+    def __init__(self, nheads, dim, eps=1e-6):
         super().__init__()
         self.feature_map = elu_feature_map
         self.eps = eps
@@ -22,7 +22,7 @@ class LinearAttention(Module):
     # masks are used during training
     # def forward(self, queries, keys, values, q_mask=None, kv_mask=None):
     def forward(self, queries, keys, values):
-        """ Multi-Head linear attention proposed in "Transformers are RNNs"
+        """Multi-Head linear attention proposed in "Transformers are RNNs"
         Args:
             queries: [N, L, H, D]
             keys: [N, S, H, D]

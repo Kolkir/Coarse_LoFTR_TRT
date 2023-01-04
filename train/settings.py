@@ -15,11 +15,13 @@ class TrainSettings:
 
         self.with_teacher = True
         self.student_coeff = 0.3
-        self.distillation_coeff = 1. - self.student_coeff
+        self.distillation_coeff = 1.0 - self.student_coeff
         self.temperature = 5.0
-        self.distill_ampl_coeff = 10  # distillation loss is usually too small - make it bigger
+        self.distill_ampl_coeff = (
+            10  # distillation loss is usually too small - make it bigger
+        )
 
-        self.amp_scale = 2.**8
+        self.amp_scale = 2.0**8
         self.data_loader_num_workers = 4
         self.write_statistics = True
         self.statistics_period = 10

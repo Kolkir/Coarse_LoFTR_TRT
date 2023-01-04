@@ -1,10 +1,9 @@
 # https://stackoverflow.com/questions/59280745/inference-with-tensorrt-engine-file-on-python
 
-import tensorrt as trt
 import numpy as np
-
-import pycuda.driver as cuda
 import pycuda.autoinit
+import pycuda.driver as cuda
+import tensorrt as trt
 
 
 class HostDeviceMem(object):
@@ -33,7 +32,7 @@ class TRTModel:
     @staticmethod
     def load_engine(trt_runtime, engine_path):
         trt.init_libnvinfer_plugins(None, "")
-        with open(engine_path, 'rb') as f:
+        with open(engine_path, "rb") as f:
             engine_data = f.read()
         engine = trt_runtime.deserialize_cuda_engine(engine_data)
         return engine
@@ -66,7 +65,9 @@ class TRTModel:
         for inp in self.inputs:
             cuda.memcpy_htod_async(inp.device, inp.host, self.stream)
 
-        self.context.execute_async(batch_size=1, bindings=self.bindings, stream_handle=self.stream.handle)
+        self.context.execute_async(
+            batch_size=1, bindings=self.bindings, stream_handle=self.stream.handle
+        )
         for out in self.outputs:
             cuda.memcpy_dtoh_async(out.host, out.device, self.stream)
 

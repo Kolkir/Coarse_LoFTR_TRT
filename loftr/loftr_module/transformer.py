@@ -1,14 +1,13 @@
 import copy
+
 import torch
 import torch.nn as nn
+
 from .linear_attention import LinearAttention
 
 
 class LoFTREncoderLayer(nn.Module):
-    def __init__(self,
-                 batch_size,
-                 d_model,
-                 nhead):
+    def __init__(self, batch_size, d_model, nhead):
         super(LoFTREncoderLayer, self).__init__()
 
         self.bs = batch_size
@@ -42,11 +41,15 @@ class LoFTREncoderLayer(nn.Module):
         query, key, value = x, source, source
 
         # multi-head attention
-        query = self.q_proj(query).view(self.bs, -1, self.nhead, self.dim)  # [N, L, (H, D)]
+        query = self.q_proj(query).view(
+            self.bs, -1, self.nhead, self.dim
+        )  # [N, L, (H, D)]
         key = self.k_proj(key).view(self.bs, -1, self.nhead, self.dim)  # [N, S, (H, D)]
         value = self.v_proj(value).view(self.bs, -1, self.nhead, self.dim)
-        message = self.attention(query, key, value)   # [N, L, (H, D)]
-        message = self.merge(message.view(self.bs, -1, self.nhead * self.dim))  # [N, L, C]
+        message = self.attention(query, key, value)  # [N, L, (H, D)]
+        message = self.merge(
+            message.view(self.bs, -1, self.nhead * self.dim)
+        )  # [N, L, C]
         message = self.norm1(message)
 
         # feed-forward network
@@ -63,11 +66,15 @@ class LocalFeatureTransformer(nn.Module):
         super(LocalFeatureTransformer, self).__init__()
 
         self.config = config
-        self.d_model = config['d_model']
-        self.nhead = config['nhead']
-        self.layer_names = config['layer_names']
-        encoder_layer = LoFTREncoderLayer(batch_size, config['d_model'], config['nhead'])
-        self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
+        self.d_model = config["d_model"]
+        self.nhead = config["nhead"]
+        self.layer_names = config["layer_names"]
+        encoder_layer = LoFTREncoderLayer(
+            batch_size, config["d_model"], config["nhead"]
+        )
+        self.layers = nn.ModuleList(
+            [copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))]
+        )
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -90,10 +97,10 @@ class LocalFeatureTransformer(nn.Module):
 
         for i, layer in enumerate(self.layers):
             name = self.layer_names[i]
-            if name == 'self':
+            if name == "self":
                 feat0 = layer(feat0, feat0)
                 feat1 = layer(feat1, feat1)
-            elif name == 'cross':
+            elif name == "cross":
                 feat0 = layer(feat0, feat1)
                 feat1 = layer(feat1, feat0)
             else:

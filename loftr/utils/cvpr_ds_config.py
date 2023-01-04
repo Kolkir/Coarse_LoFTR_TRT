@@ -8,7 +8,7 @@ def lower_config(yacs_cfg):
 
 
 _CN = CN()
-_CN.BACKBONE_TYPE = 'ResNetFPN'
+_CN.BACKBONE_TYPE = "ResNetFPN"
 _CN.RESOLUTION = (8, 2)  # options: [(8, 2), (16, 2)]
 _CN.INPUT_WIDTH = 640
 _CN.INPUT_HEIGHT = 480
@@ -24,7 +24,7 @@ _CN.COARSE = CN()
 _CN.COARSE.D_MODEL = 256
 _CN.COARSE.D_FFN = 256
 _CN.COARSE.NHEAD = 8
-_CN.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
+_CN.COARSE.LAYER_NAMES = ["self", "cross"] * 4
 _CN.COARSE.TEMP_BUG_FIX = False
 
 # 3. Coarse-Matching config
